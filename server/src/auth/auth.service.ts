@@ -1,15 +1,17 @@
 import { Inject, Injectable, UnauthorizedException, ConflictException } from '@nestjs/common'
 import { randomBytes, scrypt, timingSafeEqual } from 'crypto'
 import { promisify } from 'util'
-import Redis from 'ioredis'
-import { Pool } from 'pg'
+import { Redis } from 'ioredis'
+import pg from 'pg'
+
+const { Pool }: { Pool: new (config?: pg.PoolConfig) => pg.Pool } = pg
 
 const scryptAsync = promisify(scrypt)
 
 @Injectable()
 export class AuthService {
   constructor(
-    @Inject('DATABASE_POOL') private db: Pool,
+    @Inject('DATABASE_POOL') private db: pg.Pool,
     @Inject('REDIS') private redis: Redis,
   ) {}
 

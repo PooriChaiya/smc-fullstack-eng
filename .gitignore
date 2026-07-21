@@ -1,4 +1,7 @@
 .env
 
+# server
 server/node_modules
+server/dist
+
 web/node_modules

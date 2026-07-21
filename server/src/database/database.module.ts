@@ -1,5 +1,7 @@
 import { Module, Global } from '@nestjs/common'
-import { Pool } from 'pg'
+import pg from 'pg'
+
+const { Pool } = pg
 
 @Global()
 @Module({

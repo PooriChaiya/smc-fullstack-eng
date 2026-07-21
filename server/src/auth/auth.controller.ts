@@ -1,7 +1,7 @@
 import { Controller, Post, Get, Body, Req, Res, HttpStatus, UseGuards } from '@nestjs/common'
 import { Request, Response } from 'express'
-import { AuthService } from './auth.service'
-import { SessionGuard } from './session.guard'
+import { AuthService } from './auth.service.js'
+import { SessionGuard } from './session.guard.js'
 
 @Controller('auth')
 export class AuthController {
@@ -45,7 +45,10 @@ export class AuthController {
   @UseGuards(SessionGuard)
   @Get('me')
   async me(@Req() req: Request) {
-    const userId = req['userId']
+    const userId = req.userId
+    if (!userId) {
+      return { error: 'User not found' }
+    }
     const user = await this.authService.getUserById(userId)
     if (!user) {
       return { error: 'User not found' }
