@@ -9,13 +9,15 @@ const { Pool } = pg
     {
       provide: 'DATABASE_POOL',
       useFactory: () => {
-        return new Pool({ connectionString: process.env.DATABASE_URL })
+        const url = process.env.DATABASE_URL ?? 'postgresql://app:dev@localhost:5432/smc'
+        return new Pool({ connectionString: url })
       },
     },
     {
       provide: 'READONLY_POOL',
       useFactory: () => {
-        return new Pool({ connectionString: process.env.DATABASE_READONLY_URL })
+        const url = process.env.DATABASE_READONLY_URL ?? 'postgresql://readonly_agent:readonly@localhost:5432/smc'
+        return new Pool({ connectionString: url })
       },
     },
   ],

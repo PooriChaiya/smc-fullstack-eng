@@ -1,10 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common'
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Inject } from '@nestjs/common'
 import { Request } from 'express'
-import { AuthService } from './auth.service.js'
+import { Redis } from 'ioredis'
 
 @Injectable()
 export class SessionGuard implements CanActivate {
-  constructor(private authService: AuthService) {}
+  constructor(@Inject('REDIS') private redis: Redis) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest<Request>()
@@ -14,10 +14,14 @@ export class SessionGuard implements CanActivate {
       throw new UnauthorizedException()
     }
 
-    const userId = await this.authService.validateSession(token)
+    const userId = await this.redis.get(`session:${token}`)
     if (!userId) {
       throw new UnauthorizedException()
     }
+
+    // Refresh TTL on activity
+    const ttl = parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10)
+    await this.redis.expire(`session:${token}`, ttl)
 
     req['userId'] = userId
     return true

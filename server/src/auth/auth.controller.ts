@@ -8,11 +8,20 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
-  async register(@Body() body: { email: string; password: string }) {
+  async register(@Body() body: { email: string; password: string }, @Res() res: Response) {
     if (!body.email || !body.password) {
-      return { error: 'email and password required' }
+      return res.status(HttpStatus.BAD_REQUEST).json({ error: 'email and password required' })
     }
-    return this.authService.register(body.email, body.password)
+    const result = await this.authService.register(body.email, body.password)
+
+    // Auto-login by setting session cookie
+    res.cookie('session', result.token, {
+      httpOnly: true,
+      sameSite: 'lax',
+      maxAge: parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10) * 1000,
+    })
+
+    res.json({ userId: result.userId })
   }
 
   @Post('login')

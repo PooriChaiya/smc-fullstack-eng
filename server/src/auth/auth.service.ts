@@ -32,7 +32,12 @@ export class AuthService {
       [email.toLowerCase(), passwordHash],
     )
 
-    return { userId: rows[0].id }
+    // Create session token for auto-login
+    const token = randomBytes(32).toString('base64url')
+    const ttl = parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10)
+    await this.redis.set(`session:${token}`, rows[0].id, 'EX', ttl)
+
+    return { token, userId: rows[0].id }
   }
 
   async login(email: string, password: string) {

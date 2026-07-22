@@ -20,7 +20,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = async (email: string, password: string) => {
-    const res = await apiLogin(email, password)
+    await apiLogin(email, password)
     const me = await getMe()
     setUser(me)
   }
