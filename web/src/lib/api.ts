@@ -1,4 +1,4 @@
-const API_BASE = 'http://localhost:3001'
+const API_BASE = '/api'
 
 export interface User {
   id: string
@@ -61,16 +61,17 @@ export interface Message {
   content: string
   status: string
   createdAt: string
+  tool_calls?: ToolCall[]
 }
 
 export interface ToolCall {
   id: string
   messageId: string
-  toolName: string
-  arguments: Record<string, unknown>
+  tool_name: string
+  arguments: string | Record<string, unknown>
   result?: Record<string, unknown>
-  rowCount?: number
-  durationMs?: number
+  row_count?: number
+  duration_ms?: number
   error?: string
   createdAt: string
 }
