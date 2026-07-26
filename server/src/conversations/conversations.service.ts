@@ -27,6 +27,11 @@ export class ConversationsService {
     return this.conversationsRepo.delete(id, userId)
   }
 
+  // Auto-generate a title from the first user message (idempotent: no-op once set).
+  async setTitleIfEmpty(id: string, userId: string, title: string) {
+    return this.conversationsRepo.setTitleIfEmpty(id, userId, title)
+  }
+
   // Add a user message to a conversation
   async addUserMessage(conversationId: string, userId: string, content: string) {
     // Verify ownership via findOne (will throw 404 if not owned)

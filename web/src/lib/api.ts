@@ -162,3 +162,26 @@ export async function getCoverage(): Promise<{
   if (!res.ok) throw new Error('Failed to fetch coverage')
   return res.json()
 }
+
+// Usage / budget
+export interface Usage {
+  limit: number
+  spent: number
+  resetsAt: string
+  windowSeconds: number
+}
+
+export async function getUsage(): Promise<Usage> {
+  const res = await fetch(`${API_BASE}/usage`, { credentials: 'include' })
+  if (!res.ok) throw new Error('Failed to fetch usage')
+  return res.json()
+}
+
+/** Body shape of a 429 limit_exceeded response. */
+export interface LimitExceeded {
+  error: 'limit_exceeded'
+  limit: number
+  spent: number
+  resetsAt: string
+  windowSeconds: number
+}

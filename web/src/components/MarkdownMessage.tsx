@@ -1,3 +1,4 @@
+import { useTheme } from '@mui/material'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Components } from 'react-markdown'
@@ -27,21 +28,32 @@ interface MarkdownMessageProps {
 }
 
 function ChartRenderer({ spec }: { spec: ChartSpec }) {
+  const theme = useTheme()
   const Chart = spec.type === 'line' ? LineChart : BarChart
   const DataKey = spec.type === 'line' ? Line : Bar
+  const axisColor = theme.palette.text.disabled
 
   return (
-    <div className="my-4">
-      <h4 className="text-sm font-semibold text-gray-700 mb-2">{spec.title}</h4>
-      <ResponsiveContainer width="100%" height={300}>
+    <div style={{ margin: '12px 0' }}>
+      <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: theme.palette.text.primary }}>
+        {spec.title}
+      </div>
+      <ResponsiveContainer width="100%" height={260}>
         <Chart data={spec.data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey={spec.x} />
-          <YAxis />
-          <Tooltip />
-          <Legend />
+          <CartesianGrid strokeDasharray="3 3" stroke={theme.palette.divider} />
+          <XAxis dataKey={spec.x} tick={{ fontSize: 12, fill: axisColor }} />
+          <YAxis tick={{ fontSize: 12, fill: axisColor }} />
+          <Tooltip
+            contentStyle={{
+              background: theme.palette.background.paper,
+              border: `1px solid ${theme.palette.divider}`,
+              borderRadius: 8,
+              fontSize: 12,
+            }}
+          />
+          <Legend wrapperStyle={{ fontSize: 12 }} />
           {spec.series.map((serie) => (
-            <DataKey key={serie} dataKey={serie} fill="#3b82f6" stroke="#3b82f6" />
+            <DataKey key={serie} dataKey={serie} fill={theme.palette.primary.main} stroke={theme.palette.primary.main} />
           ))}
         </Chart>
       </ResponsiveContainer>
@@ -64,96 +76,80 @@ function tryParseChart(code: string): ChartSpec | null {
       return parsed as ChartSpec
     }
   } catch {
-    // Fall through to normal code block
+    // Not valid JSON yet (or not a chart) → fall back to a normal code block.
   }
   return null
 }
 
-const components: Components = {
-  code({ node, inline, className, children, ...props }: any) {
-    if (inline) {
-      return <code className="bg-gray-100 px-1 py-0.5 rounded text-sm" {...props}>{children}</code>
-    }
-
-    const code = String(children).replace(/\n$/, '')
-
-    // Try to parse as chart
-    if (className?.includes('chart')) {
-      const spec = tryParseChart(code)
-      if (spec) {
-        return <ChartRenderer spec={spec} />
-      }
-    }
-
-    // Normal code block
-    return (
-      <pre className="bg-gray-900 text-gray-100 p-3 rounded-lg overflow-x-auto text-sm">
-        <code {...props}>{children}</code>
-      </pre>
-    )
-  },
-  table({ children }: any) {
-    return (
-      <div className="overflow-x-auto my-2">
-        <table className="min-w-full border border-gray-200 rounded-lg overflow-hidden">
-          {children}
-        </table>
-      </div>
-    )
-  },
-  thead({ children }: any) {
-    return <thead className="bg-gray-50">{children}</thead>
-  },
-  tbody({ children }: any) {
-    return <tbody className="divide-y divide-gray-200">{children}</tbody>
-  },
-  tr({ children }: any) {
-    return <tr>{children}</tr>
-  },
-  th({ children }: any) {
-    return (
-      <th className="px-4 py-2 text-left text-xs font-semibold text-gray-700 uppercase tracking-wider">
-        {children}
-      </th>
-    )
-  },
-  td({ children }: any) {
-    return (
-      <td className="px-4 py-2 text-sm text-gray-900 whitespace-nowrap">
-        {children}
-      </td>
-    )
-  },
-  p({ children }: any) {
-    return <p className="mb-2 text-gray-800 leading-relaxed">{children}</p>
-  },
-  ul({ children }: any) {
-    return <ul className="list-disc list-inside mb-2 text-gray-800">{children}</ul>
-  },
-  ol({ children }: any) {
-    return <ol className="list-decimal list-inside mb-2 text-gray-800">{children}</ol>
-  },
-  li({ children }: any) {
-    return <li className="mb-1">{children}</li>
-  },
-  h1({ children }: any) {
-    return <h1 className="text-xl font-bold text-gray-900 mb-2">{children}</h1>
-  },
-  h2({ children }: any) {
-    return <h2 className="text-lg font-semibold text-gray-900 mb-2">{children}</h2>
-  },
-  h3({ children }: any) {
-    return <h3 className="text-base font-semibold text-gray-900 mb-2">{children}</h3>
-  },
-}
-
 export function MarkdownMessage({ content }: MarkdownMessageProps) {
+  const theme = useTheme()
+  const t = theme.palette
+
+  // Intercept ```chart fences to render Recharts; everything else is styled
+  // via theme-aware inline styles so it adapts to light/dark mode.
+  const components: Components = {
+    pre({ children }: any) {
+      const codeEl: any = Array.isArray(children) ? children[0] : children
+      const className: string = codeEl?.props?.className ?? ''
+      if (className.includes('language-chart')) {
+        const text = String(codeEl.props.children ?? '').replace(/\n$/, '')
+        const spec = tryParseChart(text)
+        if (spec) return <ChartRenderer spec={spec} />
+      }
+      return (
+        <pre
+          style={{
+            background: t.mode === 'dark' ? '#0b1220' : '#0f172a',
+            color: '#e2e8f0',
+            padding: 12,
+            borderRadius: 8,
+            overflowX: 'auto',
+            fontSize: 13,
+            margin: '8px 0',
+          }}
+        >
+          {children}
+        </pre>
+      )
+    },
+    code({ children }: any) {
+      return (
+        <code style={{ background: t.action.hover, padding: '1px 4px', borderRadius: 4, fontSize: '0.85em' }}>
+          {children}
+        </code>
+      )
+    },
+    table({ children }: any) {
+      return (
+        <div style={{ overflowX: 'auto', margin: '8px 0' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 13 }}>{children}</table>
+        </div>
+      )
+    },
+    th({ children }: any) {
+      return (
+        <th style={{ textAlign: 'left', padding: '6px 10px', borderBottom: `2px solid ${t.divider}`, fontWeight: 600 }}>
+          {children}
+        </th>
+      )
+    },
+    td({ children }: any) {
+      return <td style={{ padding: '6px 10px', borderBottom: `1px solid ${t.divider}` }}>{children}</td>
+    },
+    a({ children, href }: any) {
+      return (
+        <a href={href} style={{ color: t.primary.main }} target="_blank" rel="noreferrer">
+          {children}
+        </a>
+      )
+    },
+  }
+
   return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={components}
-    >
-      {content}
-    </ReactMarkdown>
+    <div style={{ lineHeight: 1.6, fontSize: 15 }}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
+        {content}
+      </ReactMarkdown>
+    </div>
   )
 }

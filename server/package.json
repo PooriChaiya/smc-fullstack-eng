@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/main.ts",
+    "dev": "node --import @swc-node/register/esm-register --watch src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
     "load-data": "tsx ../scripts/load-data.ts"
@@ -21,13 +21,12 @@
     "ioredis": "^5.3.2",
     "openai": "^6.48.0",
     "pg": "^8.11.3",
-    "react-markdown": "^10.1.0",
-    "recharts": "^3.10.0",
     "reflect-metadata": "^0.2.1",
-    "remark-gfm": "^4.0.1",
     "rxjs": "^7.8.1"
   },
   "devDependencies": {
+    "@swc-node/register": "^1.12.1",
+    "@swc/core": "^1.15.46",
     "@types/cookie-parser": "^1.4.6",
     "@types/node": "^20.11.5",
     "@types/pg": "^8.20.0",

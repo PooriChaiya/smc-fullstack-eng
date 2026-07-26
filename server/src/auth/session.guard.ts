@@ -1,5 +1,5 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Inject } from '@nestjs/common'
-import { Request } from 'express'
+import type { Request } from 'express'
 import { Redis } from 'ioredis'
 
 @Injectable()

@@ -53,6 +53,15 @@ export class ConversationsRepository {
     }
   }
 
+  // Set the title only if it is still NULL — first message wins, idempotent.
+  async setTitleIfEmpty(id: string, userId: string, title: string) {
+    await this.db.query(
+      `UPDATE app.conversations SET title = $3, updated_at = NOW()
+       WHERE id = $1 AND user_id = $2 AND title IS NULL`,
+      [id, userId, title]
+    )
+  }
+
   // Next sequence number for a conversation
   async nextSeq(conversationId: string): Promise<number> {
     const { rows } = await this.db.query(

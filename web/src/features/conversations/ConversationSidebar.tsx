@@ -1,108 +1,146 @@
 import { useState } from 'react'
-import { useConversations } from './useConversations'
+import {
+  Box,
+  Button,
+  List,
+  ListItemButton,
+  ListItemText,
+  IconButton,
+  Typography,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  CircularProgress,
+} from '@mui/material'
+import AddIcon from '@mui/icons-material/Add'
+import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline'
+import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline'
+import type { Conversation } from '@/lib/api'
 
 interface ConversationSidebarProps {
+  conversations: Conversation[]
   activeId: string | null
+  loading: boolean
+  error: string | null
+  creating: boolean
   onSelect: (id: string) => void
-  onDeselect: () => void
   onCreate: () => void
+  onDelete: (id: string) => Promise<void> | void
 }
 
-export function ConversationSidebar({ activeId, onSelect, onDeselect, onCreate }: ConversationSidebarProps) {
-  const { conversations, loading, error, delete: deleteConv } = useConversations()
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+function formatRelative(dateStr: string) {
+  const d = new Date(dateStr)
+  const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
+  if (days === 0) return 'Today'
+  if (days === 1) return 'Yesterday'
+  if (days < 7) return `${days}d ago`
+  return d.toLocaleDateString()
+}
 
-  const handleDelete = async (id: string, e: React.MouseEvent) => {
-    e.stopPropagation()
-    if (confirmDelete === id) {
-      setDeletingId(id)
-      try {
-        await deleteConv(id)
-        if (activeId === id) onDeselect()
-      } finally {
-        setDeletingId(null)
-        setConfirmDelete(null)
-      }
-    } else {
-      setConfirmDelete(id)
-      setTimeout(() => setConfirmDelete(null), 3000)
+export function ConversationSidebar({
+  conversations,
+  activeId,
+  loading,
+  error,
+  creating,
+  onSelect,
+  onCreate,
+  onDelete,
+}: ConversationSidebarProps) {
+  const [pendingDelete, setPendingDelete] = useState<Conversation | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    try {
+      await onDelete(pendingDelete.id)
+      setPendingDelete(null)
+    } finally {
+      setDeleting(false)
     }
   }
 
-  const formatDate = (dateStr: string) => {
-    const d = new Date(dateStr)
-    const now = new Date()
-    const days = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24))
-    if (days === 0) return 'Today'
-    if (days === 1) return 'Yesterday'
-    if (days < 7) return `${days}d ago`
-    return d.toLocaleDateString()
-  }
-
   return (
-    <aside className="w-64 bg-gray-50 border-r border-gray-200 flex flex-col h-full">
-      <div className="p-4 border-b border-gray-200">
-        <button
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Box sx={{ p: 2 }}>
+        <Button
+          fullWidth
+          variant="contained"
+          startIcon={creating ? <CircularProgress size={18} color="inherit" /> : <AddIcon />}
           onClick={onCreate}
-          className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-medium"
+          disabled={creating}
         >
-          + New Chat
-        </button>
-      </div>
+          New chat
+        </Button>
+      </Box>
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <Box sx={{ flex: 1, overflowY: 'auto' }}>
         {loading && (
-          <div className="text-center text-gray-400 py-8">Loading...</div>
+          <Box sx={{ textAlign: 'center', py: 4 }}>
+            <CircularProgress size={24} />
+          </Box>
         )}
-
         {error && (
-          <div className="text-center text-red-500 py-4 text-sm">{error}</div>
+          <Typography color="error" variant="body2" sx={{ px: 2 }}>
+            {error}
+          </Typography>
         )}
-
         {!loading && conversations.length === 0 && (
-          <div className="text-center text-gray-400 py-8 text-sm">
-            No conversations yet
-          </div>
+          <Box sx={{ textAlign: 'center', py: 6, px: 2 }}>
+            <ChatBubbleOutlineIcon color="disabled" />
+            <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+              No conversations yet
+            </Typography>
+          </Box>
         )}
 
-        {conversations.map((conv) => (
-          <div
-            key={conv.id}
-            onClick={() => onSelect(conv.id)}
-            className={`
-              group relative p-3 mb-2 rounded-lg cursor-pointer transition
-              ${activeId === conv.id ? 'bg-blue-100 ring-1 ring-blue-200' : 'hover:bg-gray-100'}
-            `}
-          >
-            <div className="font-medium text-gray-800 truncate text-sm">{conv.title}</div>
-            <div className="text-xs text-gray-500 mt-1">{formatDate(conv.updatedAt)}</div>
-
-            {activeId !== conv.id && (
-              <button
-                onClick={(e) => handleDelete(conv.id, e)}
-                disabled={deletingId === conv.id}
-                className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-red-600 hover:bg-gray-200 rounded transition"
-                title={confirmDelete === conv.id ? 'Click to confirm' : 'Delete'}
+        <List dense disablePadding>
+          {conversations.map((conv) => (
+            <ListItemButton
+              key={conv.id}
+              selected={activeId === conv.id}
+              onClick={() => onSelect(conv.id)}
+              sx={{ pr: 7 }}
+            >
+              <ListItemText
+                primary={conv.title || 'Untitled chat'}
+                secondary={formatRelative(conv.updatedAt)}
+                primaryTypographyProps={{ noWrap: true, fontSize: 14 }}
+                secondaryTypographyProps={{ fontSize: 12 }}
+              />
+              <IconButton
+                edge="end"
+                size="small"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setPendingDelete(conv)
+                }}
+                sx={{ position: 'absolute', right: 8, opacity: 0.5, '&:hover': { opacity: 1, color: 'error.main' } }}
+                aria-label="delete conversation"
               >
-                {deletingId === conv.id ? (
-                  <span className="text-xs">...</span>
-                ) : (
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                )}
-              </button>
-            )}
+                <DeleteOutlineIcon fontSize="small" />
+              </IconButton>
+            </ListItemButton>
+          ))}
+        </List>
+      </Box>
 
-            {confirmDelete === conv.id && activeId !== conv.id && (
-              <div className="absolute inset-0 bg-red-50/90 rounded-lg flex items-center justify-center">
-                <span className="text-red-600 text-xs font-medium">Click again to delete</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </aside>
+      <Dialog open={!!pendingDelete} onClose={() => setPendingDelete(null)}>
+        <DialogTitle>Delete conversation?</DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary">
+            “{pendingDelete?.title || 'Untitled chat'}” and all its messages will be permanently removed.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setPendingDelete(null)}>Cancel</Button>
+          <Button onClick={confirmDelete} color="error" variant="contained" disabled={deleting}>
+            {deleting ? 'Deleting…' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
   )
 }

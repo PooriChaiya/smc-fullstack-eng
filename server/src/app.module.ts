@@ -7,6 +7,7 @@ import { RedisModule } from './redis/redis.module.js'
 import { ConversationsModule } from './conversations/conversations.module.js'
 import { FinancialsModule } from './financials/financials.module.js'
 import { ChatModule } from './chat/chat.module.js'
+import { UsageModule } from './usage/usage.module.js'
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { ChatModule } from './chat/chat.module.js'
     ConversationsModule,
     FinancialsModule,
     ChatModule,
+    UsageModule,
     HealthModule,
   ],
 })

@@ -1,67 +1,104 @@
-import { useState, useEffect, useRef } from 'react'
-import { getMessages, Message as ApiMessage } from '@/lib/api'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import {
+  Box,
+  Paper,
+  TextField,
+  IconButton,
+  Typography,
+  Alert,
+  Stack,
+  Tooltip,
+} from '@mui/material'
+import SendIcon from '@mui/icons-material/Send'
+import StopCircleIcon from '@mui/icons-material/StopCircle'
+import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
+import { getMessages, Message as ApiMessage, ToolCall, LimitExceeded } from '@/lib/api'
 import { ToolCallCard } from '@/components/ToolCallCard'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
 
 interface ChatViewProps {
-  conversationId: string | null
+  conversationId: string
+  onTurnComplete?: () => void
 }
 
-export function ChatView({ conversationId }: ChatViewProps) {
+const EXAMPLE_PROMPTS = [
+  "What was Apple's revenue in 2024?",
+  'Compare Tesla and Microsoft net income',
+  'Show me the most profitable companies',
+  'What sectors do you have data for?',
+]
+
+export function ChatView({ conversationId, onTurnComplete }: ChatViewProps) {
   const [messages, setMessages] = useState<ApiMessage[]>([])
+  const [streaming, setStreaming] = useState<ApiMessage | null>(null)
   const [loadingHistory, setLoadingHistory] = useState(false)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [abortController, setAbortController] = useState<AbortController | null>(null)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+  const [limitError, setLimitError] = useState<LimitExceeded | null>(null)
   const [isScrolledUp, setIsScrolledUp] = useState(false)
+  const abortRef = useRef<AbortController | null>(null)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
 
-  // Load conversation history
+  // Load history when the conversation changes.
   useEffect(() => {
-    if (!conversationId) {
-      setMessages([])
-      return
-    }
     setLoadingHistory(true)
+    setLimitError(null)
     getMessages(conversationId)
       .then(setMessages)
       .finally(() => setLoadingHistory(false))
   }, [conversationId])
 
-  // Auto-scroll to bottom unless user has scrolled up
+  // Auto-scroll to bottom unless the user has scrolled up.
   useEffect(() => {
-    if (!isScrolledUp && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [messages, isScrolledUp])
+    if (isScrolledUp) return
+    const el = scrollRef.current
+    if (el) el.scrollTop = el.scrollHeight
+  }, [messages, streaming, isScrolledUp])
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLDivElement
-    const isAtBottom = target.scrollHeight - target.scrollTop <= target.clientHeight + 100
-    setIsScrolledUp(!isAtBottom)
-  }
+  const onScroll = useCallback(() => {
+    const el = scrollRef.current
+    if (!el) return
+    const atBottom = el.scrollHeight - el.scrollTop <= el.clientHeight + 80
+    setIsScrolledUp(!atBottom)
+  }, [])
+
+  const updateStreaming = (fn: (m: ApiMessage) => ApiMessage) =>
+    setStreaming((prev) => (prev ? fn(prev) : prev))
 
   const sendMessage = async (message: string) => {
-    if (!conversationId || isLoading) return
-
+    if (!message.trim() || isLoading) return
+    setLimitError(null)
     setIsLoading(true)
-    const controller = new AbortController()
-    setAbortController(controller)
+    setIsScrolledUp(false)
 
-    // Optimistically add user message
+    const controller = new AbortController()
+    abortRef.current = controller
+
     const userMsg: ApiMessage = {
       id: `temp-${Date.now()}`,
       conversationId,
-      seq: messages.length + 1,
+      seq: -1,
       role: 'user',
       content: message,
       status: 'complete',
       createdAt: new Date().toISOString(),
     }
     setMessages((prev) => [...prev, userMsg])
+    setStreaming({
+      id: 'streaming',
+      conversationId,
+      seq: -1,
+      role: 'assistant',
+      content: '',
+      status: 'streaming',
+      createdAt: new Date().toISOString(),
+      tool_calls: [],
+    })
 
+    let turnRan = false
     try {
-      const response = await fetch('/api/chat/stream', {
+      const res = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
@@ -69,180 +106,284 @@ export function ChatView({ conversationId }: ChatViewProps) {
         signal: controller.signal,
       })
 
-      if (!response.ok) throw new Error('Failed to send message')
+      if (res.status === 429) {
+        setLimitError((await res.json()) as LimitExceeded)
+        return
+      }
+      if (!res.ok) throw new Error('Failed to send message')
+      turnRan = true
 
-      const reader = response.body?.getReader()
+      const reader = res.body?.getReader()
       const decoder = new TextDecoder()
-
       if (!reader) throw new Error('No response body')
 
       let buffer = ''
-
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
-
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
+        buffer = lines.pop() ?? ''
         for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            const data = line.slice(6)
-            if (data === '[DONE]') continue
-
-            try {
-              const chunk = JSON.parse(data)
-              console.log('Chunk:', chunk) // For debugging
-            } catch (e) {
-              console.error('Failed to parse chunk:', data)
-            }
+          if (!line.startsWith('data: ')) continue
+          const data = line.slice(6)
+          if (data === '[DONE]') continue
+          try {
+            handleChunk(JSON.parse(data))
+          } catch {
+            /* ignore unparseable partial */
           }
         }
       }
-
-      // Reload messages after stream completes
-      const updatedMessages = await getMessages(conversationId)
-      setMessages(updatedMessages)
-    } catch (error: any) {
-      if (error.name === 'AbortError') {
-        console.log('Request aborted')
-      } else {
-        console.error('Error sending message:', error)
+    } catch (err: unknown) {
+      if (!(err instanceof Error && err.name === 'AbortError')) {
+        console.error('Stream error:', err)
       }
     } finally {
+      if (turnRan) {
+        try {
+          setMessages(await getMessages(conversationId))
+        } catch {
+          /* keep optimistic state if reload fails */
+        }
+        onTurnComplete?.()
+      } else {
+        // No server turn happened (429 / network) → drop the optimistic user msg.
+        setMessages((prev) => prev.filter((m) => m.id !== userMsg.id))
+      }
+      setStreaming(null)
       setIsLoading(false)
-      setAbortController(null)
+      abortRef.current = null
     }
   }
 
-  // Empty state
-  if (!conversationId) {
-    return (
-      <div className="h-full flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold text-gray-700 mb-2">Start a conversation</h2>
-          <p className="text-gray-500">Select an existing chat or create a new one</p>
-          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left text-sm text-gray-600 max-w-md mx-auto">
-            <p className="font-medium mb-2">Try asking:</p>
-            <ul className="space-y-1">
-              <li>• "What was Apple's revenue in 2024?"</li>
-              <li>• "Compare Tesla and Microsoft net income"</li>
-              <li>• "Show me the most profitable companies"</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    )
+  // Apply one SSE chunk to the in-flight streaming message.
+  function handleChunk(chunk: { type: string; data?: any }) {
+    const { type, data } = chunk
+    switch (type) {
+      case 'text-delta':
+        updateStreaming((m) => ({ ...m, content: m.content + (data ?? '') }))
+        break
+      case 'tool-input-start': {
+        const tc: ToolCall = {
+          id: data.toolCallId,
+          messageId: 'streaming',
+          tool_name: data.toolName,
+          arguments: '',
+          createdAt: new Date().toISOString(),
+        }
+        updateStreaming((m) => ({ ...m, tool_calls: [...(m.tool_calls ?? []), tc] }))
+        break
+      }
+      case 'tool-input-delta':
+        updateStreaming((m) => ({
+          ...m,
+          tool_calls: (m.tool_calls ?? []).map((t) =>
+            t.id === data.toolCallId ? { ...t, arguments: (typeof t.arguments === 'string' ? t.arguments : '') + (data.argsDelta ?? '') } : t,
+          ),
+        }))
+        break
+      case 'tool-output-available':
+        updateStreaming((m) => ({
+          ...m,
+          tool_calls: (m.tool_calls ?? []).map((t) =>
+            t.id === data.toolCallId
+              ? { ...t, result: data.result, row_count: data.rowCount, duration_ms: data.durationMs }
+              : t,
+          ),
+        }))
+        break
+      case 'tool-output-error':
+        updateStreaming((m) => ({
+          ...m,
+          tool_calls: (m.tool_calls ?? []).map((t) =>
+            t.id === data.toolCallId ? { ...t, error: data.error } : t,
+          ),
+        }))
+        break
+      case 'error':
+        updateStreaming((m) => ({ ...m, status: 'error', content: m.content + `\n\n⚠️ ${data?.message ?? 'Error'}` }))
+        break
+    }
   }
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() || isLoading) return
-    const message = input
+    const msg = input
     setInput('')
-    sendMessage(message)
+    sendMessage(msg)
   }
 
-  const handleStop = () => {
-    abortController?.abort()
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      onSubmit(e as unknown as React.FormEvent)
+    }
   }
+
+  const handleStop = () => abortRef.current?.abort()
+
+  const pickExample = (prompt: string) => {
+    setInput(prompt)
+    inputRef.current?.focus()
+  }
+
+  const rendered = [...messages]
+  if (streaming) rendered.push(streaming)
+  const showEmpty = !loadingHistory && rendered.length === 0
+  const isThinking = !!streaming && streaming.content === '' && (streaming.tool_calls?.length ?? 0) === 0
 
   return (
-    <div className="h-full flex flex-col">
-      <div
-        className="flex-1 overflow-y-auto p-6 space-y-6"
-        onScroll={handleScroll}
-      >
+    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+      {limitError && <LimitBanner resetsAt={limitError.resetsAt} limit={limitError.limit} onDismiss={() => setLimitError(null)} />}
+
+      <Box ref={scrollRef} onScroll={onScroll} sx={{ flex: 1, overflowY: 'auto', px: { xs: 2, md: 4 }, py: 3 }}>
         {loadingHistory ? (
-          <div className="flex items-center justify-center text-gray-400">
-            Loading messages...
-          </div>
-        ) : messages.length === 0 && !isLoading ? (
-          <div className="text-center text-gray-400 mt-20">
-            No messages yet. Start the conversation!
-          </div>
-        ) : (
-          <>
-            {messages.map((msg) => (
-              <div key={msg.id}>
-                <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`
-                      max-w-2xl rounded-lg px-4 py-3
-                      ${msg.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 shadow-sm text-gray-800'}
-                    `}
-                  >
-                    {msg.role === 'assistant' ? (
-                      <MarkdownMessage content={msg.content} />
-                    ) : (
-                      <p className="whitespace-pre-wrap">{msg.content}</p>
-                    )}
-                  </div>
-                </div>
-
-                {/* Tool calls */}
-                {msg.tool_calls && msg.tool_calls.map((tc) => (
-                  <ToolCallCard
-                    key={tc.id}
-                    toolName={tc.tool_name}
-                    args={typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments)}
-                    result={tc.result as any}
-                    rowCount={tc.row_count ?? undefined}
-                    durationMs={tc.duration_ms ?? undefined}
-                    error={tc.error ?? undefined}
-                  />
-                ))}
-              </div>
+          <Box sx={{ textAlign: 'center', color: 'text.secondary', mt: 6 }}>Loading messages…</Box>
+        ) : showEmpty ? (
+          <Stack spacing={1.5} sx={{ maxWidth: 640, mx: 'auto', mt: { xs: 4, md: 8 } }}>
+            <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 1 }}>
+              <AutoAwesomeIcon color="primary" />
+              <Typography variant="h6">Ask about company financials</Typography>
+            </Stack>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Every figure comes from a live SQL query you can inspect. Try one:
+            </Typography>
+            {EXAMPLE_PROMPTS.map((p) => (
+              <Paper
+                key={p}
+                variant="outlined"
+                onClick={() => pickExample(p)}
+                sx={{ p: 1.5, cursor: 'pointer', '&:hover': { borderColor: 'primary.main', bgcolor: 'action.hover' } }}
+              >
+                <Typography variant="body2">{p}</Typography>
+              </Paper>
             ))}
-
-            {/* Loading indicator */}
-            {isLoading && (
-              <div className="flex items-center gap-2 text-gray-500 text-sm">
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-              </div>
-            )}
-
-            <div ref={messagesEndRef} />
-          </>
+          </Stack>
+        ) : (
+          <Stack spacing={3} sx={{ maxWidth: 820, mx: 'auto' }}>
+            {rendered.map((msg) => (
+              <MessageRow key={msg.id} msg={msg} thinking={msg.id === 'streaming' && isThinking} />
+            ))}
+          </Stack>
         )}
-      </div>
+      </Box>
 
-      {/* Input form */}
-      <div className="border-t border-gray-200 p-4 bg-white">
-        <form onSubmit={onSubmit} className="flex gap-2">
-          <input
-            type="text"
-            placeholder="Ask about financials..."
+      <Paper elevation={0} square sx={{ borderTop: 1, borderColor: 'divider', p: { xs: 1.5, md: 2 }, bgcolor: 'background.paper' }}>
+        <Box component="form" onSubmit={onSubmit} sx={{ maxWidth: 820, mx: 'auto', display: 'flex', gap: 1, alignItems: 'flex-end' }}>
+          <TextField
+            inputRef={inputRef}
+            multiline
+            minRows={1}
+            maxRows={5}
+            fullWidth
+            placeholder="Ask about financials…  (Enter to send, Shift+Enter for newline)"
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
             disabled={isLoading}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:cursor-not-allowed"
           />
           {isLoading ? (
-            <button
-              type="button"
-              onClick={handleStop}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
-            >
-              Stop
-            </button>
+            <Tooltip title="Stop generating">
+              <IconButton color="error" onClick={handleStop} sx={{ border: 1, borderColor: 'error.main', p: 1.2 }}>
+                <StopCircleIcon />
+              </IconButton>
+            </Tooltip>
           ) : (
-            <button
-              type="submit"
-              disabled={!input.trim()}
-              className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition"
-            >
-              Send
-            </button>
+            <IconButton type="submit" color="primary" disabled={!input.trim()} sx={{ border: 1, borderColor: 'divider', p: 1.2 }}>
+              <SendIcon />
+            </IconButton>
           )}
-        </form>
-        <p className="text-xs text-gray-400 mt-2">
-          Press Enter to send, Shift+Enter for new line
-        </p>
-      </div>
-    </div>
+        </Box>
+      </Paper>
+    </Box>
+  )
+}
+
+function MessageRow({ msg, thinking }: { msg: ApiMessage; thinking: boolean }) {
+  const isUser = msg.role === 'user'
+  return (
+    <Box sx={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
+      <Box sx={{ width: '100%', maxWidth: 720 }}>
+        <Paper
+          variant={isUser ? 'elevation' : 'outlined'}
+          elevation={isUser ? 0 : 0}
+          sx={{
+            px: 2,
+            py: 1.5,
+            display: 'inline-block',
+            bgcolor: isUser ? 'primary.main' : 'background.paper',
+            color: isUser ? 'primary.contrastText' : 'text.primary',
+            borderTopLeftRadius: isUser ? 10 : 2,
+            borderTopRightRadius: isUser ? 2 : 10,
+          }}
+        >
+          {isUser ? (
+            <Typography sx={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Typography>
+          ) : msg.content ? (
+            <MarkdownMessage content={msg.content} />
+          ) : thinking ? (
+            <TypingDots />
+          ) : null}
+        </Paper>
+
+        {msg.tool_calls?.map((tc) => (
+          <ToolCallCard
+            key={tc.id}
+            toolName={tc.tool_name}
+            args={typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments)}
+            result={tc.result as any}
+            rowCount={tc.row_count ?? undefined}
+            durationMs={tc.duration_ms ?? undefined}
+            error={tc.error ?? undefined}
+            isStreaming={!tc.result && !tc.error}
+          />
+        ))}
+      </Box>
+    </Box>
+  )
+}
+
+function TypingDots() {
+  return (
+    <Stack direction="row" spacing={0.5} sx={{ py: 0.5 }}>
+      {[0, 150, 300].map((d) => (
+        <Box
+          key={d}
+          sx={{
+            width: 7,
+            height: 7,
+            borderRadius: '50%',
+            bgcolor: 'text.disabled',
+            animation: 'chatBlink 1.4s infinite',
+            animationDelay: `${d}ms`,
+          }}
+        />
+      ))}
+      <style>{`@keyframes chatBlink{0%,80%,100%{opacity:.3}40%{opacity:1}}`}</style>
+    </Stack>
+  )
+}
+
+function LimitBanner({ resetsAt, limit, onDismiss }: { resetsAt: string; limit: number; onDismiss: () => void }) {
+  const [remaining, setRemaining] = useState(() => Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)))
+  useEffect(() => {
+    const id = setInterval(() => {
+      setRemaining(Math.max(0, Math.floor((new Date(resetsAt).getTime() - Date.now()) / 1000)))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [resetsAt])
+
+  const mm = Math.floor(remaining / 60)
+  const ss = remaining % 60
+  return (
+    <Alert
+      severity="warning"
+      onClose={onDismiss}
+      sx={{ borderRadius: 0 }}
+    >
+      You've reached your ${limit.toFixed(2)} budget for this window. Try again in {mm}:{ss.toString().padStart(2, '0')}.
+    </Alert>
   )
 }

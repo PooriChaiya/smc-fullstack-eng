@@ -1,4 +1,5 @@
 import { useState, FormEvent } from 'react'
+import { Box, Card, CardContent, TextField, Button, Alert, Link, Typography } from '@mui/material'
 import { useAuth } from './AuthContext'
 import { useNavigate } from 'react-router-dom'
 
@@ -14,19 +15,10 @@ export function RegisterForm() {
   async function onSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
-
-    if (password !== confirm) {
-      setError('Passwords do not match')
-      return
-    }
-
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
+    if (password !== confirm) return setError('Passwords do not match')
+    if (password.length < 8) return setError('Password must be at least 8 characters')
 
     setLoading(true)
-
     try {
       await register(email, password)
       navigate('/')
@@ -38,43 +30,57 @@ export function RegisterForm() {
   }
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4 max-w-sm mx-auto bg-white p-6 rounded shadow">
-      <h2 className="text-xl font-bold">Register</h2>
-      {error && <p className="text-red-500 text-sm">{error}</p>}
-      <input
-        type="email"
-        placeholder="Email"
-        value={email}
-        onChange={(e) => setEmail(e.target.value)}
-        className="w-full border p-2 rounded"
-        required
-      />
-      <input
-        type="password"
-        placeholder="Password (min 8 chars)"
-        value={password}
-        onChange={(e) => setPassword(e.target.value)}
-        className="w-full border p-2 rounded"
-        required
-      />
-      <input
-        type="password"
-        placeholder="Confirm password"
-        value={confirm}
-        onChange={(e) => setConfirm(e.target.value)}
-        className="w-full border p-2 rounded"
-        required
-      />
-      <button
-        type="submit"
-        disabled={loading}
-        className="w-full bg-blue-600 text-white p-2 rounded disabled:opacity-50"
-      >
-        {loading ? 'Creating account...' : 'Register'}
-      </button>
-      <p className="text-sm text-gray-600">
-        Have an account? <a href="/login" className="text-blue-600">Login</a>
-      </p>
-    </form>
+    <Box sx={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 2 }}>
+      <Card sx={{ maxWidth: 400, width: '100%' }}>
+        <CardContent sx={{ p: 4 }}>
+          <Typography variant="h5" component="h1" fontWeight={700} gutterBottom>
+            Create your account
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Register to start chatting
+          </Typography>
+
+          <Box component="form" onSubmit={onSubmit} sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {error && <Alert severity="error">{error}</Alert>}
+            <TextField
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              fullWidth
+              required
+              autoComplete="email"
+              autoFocus
+            />
+            <TextField
+              label="Password (min 8 chars)"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              fullWidth
+              required
+              autoComplete="new-password"
+            />
+            <TextField
+              label="Confirm password"
+              type="password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+              fullWidth
+              required
+              autoComplete="new-password"
+            />
+            <Button type="submit" variant="contained" size="large" fullWidth disabled={loading}>
+              {loading ? 'Creating account…' : 'Register'}
+            </Button>
+          </Box>
+
+          <Typography variant="body2" sx={{ mt: 3, textAlign: 'center' }}>
+            Have an account?{' '}
+            <Link href="/login" underline="hover">Sign in</Link>
+          </Typography>
+        </CardContent>
+      </Card>
+    </Box>
   )
 }

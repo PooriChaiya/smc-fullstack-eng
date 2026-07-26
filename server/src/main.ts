@@ -1,3 +1,4 @@
+import 'reflect-metadata' // required for Nest DI paramtype metadata (esp. under tsx/esbuild)
 import { NestFactory } from '@nestjs/core'
 import { AppModule } from './app.module.js'
 import cookieParser from 'cookie-parser'

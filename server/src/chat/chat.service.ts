@@ -1,11 +1,26 @@
-import { Inject, Injectable } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import { streamText, isStepCount } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
-import { ModelMessage } from '@ai-sdk/provider-utils'
+import type { ModelMessage } from '@ai-sdk/provider-utils'
 import * as tiktoken from 'gpt-tokenizer'
 import { LlmService } from '../llm/llm.service.js'
 import { ConversationsService } from '../conversations/conversations.service.js'
 import { MessagesRepository } from '../conversations/messages.repository.js'
+import { UsageService, TokenUsage } from '../usage/usage.service.js'
+
+export type StreamPartType =
+  | 'text-delta'
+  | 'tool-input-start'
+  | 'tool-input-delta'
+  | 'tool-output-available'
+  | 'tool-output-error'
+  | 'finish'
+  | 'error'
+
+export interface StreamChunk {
+  type: StreamPartType
+  data?: unknown
+}
 
 @Injectable()
 export class ChatService {
@@ -13,55 +28,51 @@ export class ChatService {
     private llm: LlmService,
     private conversations: ConversationsService,
     private messagesRepo: MessagesRepository,
-    @Inject('REDIS') private redis: any,
+    private usage: UsageService,
   ) {}
 
   async streamChat(
     conversationId: string,
     userId: string,
     userMessage: string,
-    onChunk: (chunk: {
-      type: 'text-delta' | 'tool-input-start' | 'tool-input-delta' | 'tool-output-available' | 'tool-output-error' | 'finish' | 'error'
-      data?: unknown
-    }) => void,
+    onChunk: (chunk: StreamChunk) => void,
     signal?: AbortSignal,
   ) {
-    const openai = createOpenAI({
-      apiKey: process.env.OPENAI_API_KEY!,
-    })
+    const openai = createOpenAI({ apiKey: process.env.OPENAI_API_KEY! })
 
-    // Create user message
+    // Persist the user turn, then auto-title from the first message.
     await this.conversations.addUserMessage(conversationId, userId, userMessage)
+    await this.conversations.setTitleIfEmpty(
+      conversationId,
+      userId,
+      userMessage.slice(0, 60).trim() || 'New chat',
+    )
 
-    // Create placeholder assistant message
+    // Placeholder assistant message updated in finally regardless of outcome.
     const assistantMsg = await this.conversations.createAssistantMessage(conversationId, userId)
 
-    // Get conversation history
+    // Rebuild model history from persisted conversation.
     const conversation = await this.conversations.findOne(conversationId, userId)
     const messages: ModelMessage[] = (conversation.messages || []).map((m: any) => {
-      const baseMsg: any = {
-        role: m.role,
-        content: m.content,
-      }
-
-      // Add tool calls if present
-      if (m.tool_calls && m.tool_calls.length > 0) {
+      const baseMsg: any = { role: m.role, content: m.content }
+      if (m.tool_calls?.length) {
         baseMsg.toolCalls = m.tool_calls.map((tc: any) => ({
           toolCallId: tc.id,
           toolName: tc.toolName,
           args: tc.arguments,
         }))
       }
-
       return baseMsg
     })
 
-    // Accumulators
     let accumulatedText = ''
-    let accumulatedToolCalls: Map<string, { toolName: string; args: string; result?: unknown; rowCount?: number; durationMs?: number; error?: string }> = new Map()
+    const tools = new Map<
+      string,
+      { toolName: string; args: string; result?: unknown; rowCount?: number; durationMs?: number; error?: string }
+    >()
     let currentToolId: string | null = null
-    let currentToolArgs = ''
     let status: 'streaming' | 'complete' | 'stopped' | 'error' = 'streaming'
+    let finishTokens: TokenUsage | null = null // populated by the finish part (absent on abort)
 
     try {
       const result = await streamText({
@@ -82,81 +93,59 @@ export class ChatService {
 
           case 'tool-input-start':
             currentToolId = chunk.id
-            currentToolArgs = ''
-            accumulatedToolCalls.set(chunk.id, {
-              toolName: chunk.toolName,
-              args: '',
-            })
-            onChunk({
-              type: 'tool-input-start',
-              data: { toolCallId: chunk.id, toolName: chunk.toolName },
-            })
+            tools.set(chunk.id, { toolName: chunk.toolName, args: '' })
+            onChunk({ type: 'tool-input-start', data: { toolCallId: chunk.id, toolName: chunk.toolName } })
             break
 
           case 'tool-input-delta':
             if (currentToolId) {
-              currentToolArgs += chunk.delta
-              accumulatedToolCalls.get(currentToolId)!.args = currentToolArgs
-              onChunk({
-                type: 'tool-input-delta',
-                data: { toolCallId: currentToolId, argsDelta: chunk.delta },
-              })
+              const entry = tools.get(currentToolId)!
+              entry.args += chunk.delta
+              onChunk({ type: 'tool-input-delta', data: { toolCallId: currentToolId, argsDelta: chunk.delta } })
             }
             break
 
           case 'tool-result': {
-            const toolEntry = accumulatedToolCalls.get(chunk.toolCallId)
-            if (!toolEntry) break
+            const entry = tools.get(chunk.toolCallId)
+            if (!entry) break
+            const parsedArgs = JSON.parse(entry.args || '{}')
+            const out = await this.llm.executeToolCall(entry.toolName, parsedArgs)
+            entry.result = out.result
+            entry.rowCount = out.rowCount
+            entry.durationMs = out.durationMs
+            entry.error = out.error
 
-            const parsedArgs = JSON.parse(toolEntry.args)
-            const toolResult = await this.llm.executeToolCall(toolEntry.toolName, parsedArgs)
-
-            // Update accumulated with result
-            accumulatedToolCalls.set(chunk.toolCallId, {
-              ...toolEntry,
-              result: toolResult.result,
-              rowCount: toolResult.rowCount,
-              durationMs: toolResult.durationMs,
-              error: toolResult.error,
-            })
-
-            if (toolResult.error) {
-              onChunk({
-                type: 'tool-output-error',
-                data: { toolCallId: chunk.toolCallId, error: toolResult.error },
-              })
+            if (out.error) {
+              onChunk({ type: 'tool-output-error', data: { toolCallId: chunk.toolCallId, error: out.error } })
             } else {
               onChunk({
                 type: 'tool-output-available',
-                data: {
-                  toolCallId: chunk.toolCallId,
-                  result: toolResult.result,
-                  rowCount: toolResult.rowCount,
-                  durationMs: toolResult.durationMs,
-                },
+                data: { toolCallId: chunk.toolCallId, result: out.result, rowCount: out.rowCount, durationMs: out.durationMs },
               })
             }
 
-            // Persist tool call to DB
             await this.messagesRepo.createToolCall({
               messageId: assistantMsg.id,
-              toolName: toolEntry.toolName,
+              toolName: entry.toolName,
               arguments: parsedArgs,
-              result: toolResult.result as Record<string, unknown> | undefined,
-              rowCount: toolResult.rowCount,
-              durationMs: toolResult.durationMs,
-              error: toolResult.error,
+              result: out.result as Record<string, unknown> | undefined,
+              rowCount: out.rowCount,
+              durationMs: out.durationMs,
+              error: out.error,
             })
             break
           }
 
           case 'finish': {
-            const { totalUsage, finishReason } = chunk
+            const { totalUsage, finishReason } = chunk as any
             status = finishReason === 'error' ? 'error' : 'complete'
-            onChunk({
-              type: 'finish',
-              data: { usage: totalUsage, finishReason },
-            })
+            if (totalUsage) {
+              finishTokens = {
+                promptTokens: totalUsage.promptTokens ?? 0,
+                completionTokens: totalUsage.completionTokens ?? 0,
+              }
+            }
+            onChunk({ type: 'finish', data: { usage: totalUsage, finishReason } })
             break
           }
 
@@ -179,19 +168,29 @@ export class ChatService {
         onChunk({ type: 'error', data: { message: error instanceof Error ? error.message : 'Unknown error' } })
       }
     } finally {
-      // Persist assistant message
+      // Accounting + persistence happen here so every exit path is covered:
+      // completion, user abort, client disconnect, upstream error.
       await this.messagesRepo.updateContent(assistantMsg.id, accumulatedText)
       await this.messagesRepo.updateStatus(assistantMsg.id, status)
 
-      // Calculate cost (estimate from accumulated text)
-      const totalTokens = tiktoken.encode(accumulatedText).length
-      const promptTokens = messages.reduce((sum, m) => sum + tiktoken.encode((m.content as string) || '').length, 0)
-      const costUsd = ((promptTokens + totalTokens) / 1_000_000) * 0.15 // gpt-4o-mini pricing
+      let costUsd: number
+      let estimated: boolean
+      if (finishTokens) {
+        costUsd = this.usage.costFromUsage(finishTokens)
+        estimated = false
+      } else {
+        // Abort/disconnect: OpenAI never sends the final usage chunk, so
+        // count accumulated output with a tokenizer and flag it estimated.
+        const promptTokens = messages.reduce(
+          (sum, m) => sum + tiktoken.encode((m.content as string) || '').length,
+          0,
+        )
+        const completionTokens = tiktoken.encode(accumulatedText).length
+        costUsd = this.usage.costFromUsage({ promptTokens, completionTokens })
+        estimated = true
+      }
 
-      // Record usage event (fixed window: 1 hour)
-      const windowStart = Math.floor(Date.now() / 3600000) * 3600
-      await this.redis.incrbyfloat(`usage:${userId}:${windowStart}`, costUsd)
-      await this.redis.expire(`usage:${userId}:${windowStart}`, 3600)
+      await this.usage.record(userId, assistantMsg.id, costUsd, estimated, finishTokens ?? undefined)
     }
   }
 }

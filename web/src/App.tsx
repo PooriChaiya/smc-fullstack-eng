@@ -4,7 +4,6 @@ import { LoginForm } from './features/auth/LoginForm'
 import { RegisterForm } from './features/auth/RegisterForm'
 import { ProtectedRoute } from './features/auth/ProtectedRoute'
 import { ChatLayout } from './features/conversations/ChatLayout'
-import { ChatView } from './features/chat/ChatView'
 
 function App() {
   return (
@@ -17,9 +16,7 @@ function App() {
             path="/"
             element={
               <ProtectedRoute>
-                <ChatLayout>
-                  {(id) => <ChatView conversationId={id} />}
-                </ChatLayout>
+                <ChatLayout />
               </ProtectedRoute>
             }
           />
