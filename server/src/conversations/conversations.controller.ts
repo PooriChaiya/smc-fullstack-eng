@@ -17,6 +17,11 @@ export class ConversationsController {
     return this.conversationsService.findOne(id, req.userId)
   }
 
+  @Get(':id/messages')
+  async getMessages(@Param('id') id: string, @Req() req: { userId: string }) {
+    return this.conversationsService.getMessages(id, req.userId)
+  }
+
   @Post()
   async create(@Body() body: { title?: string }, @Req() req: { userId: string }) {
     return this.conversationsService.create(req.userId, body.title)

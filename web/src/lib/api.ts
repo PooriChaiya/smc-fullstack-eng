@@ -116,37 +116,6 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
   return res.json()
 }
 
-// Financials API
-export async function queryFinancials(sql: string): Promise<{
-  columns: string[]
-  rows: Record<string, unknown>[]
-  rowCount: number
-  durationMs: number
-}> {
-  const res = await fetch(`${API_BASE}/financials/query`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ sql }),
-  })
-  if (!res.ok) {
-    const err = await res.json()
-    throw new Error(err.error ?? 'Query failed')
-  }
-  return res.json()
-}
-
-export async function getCoverage(): Promise<{
-  tickers: string[]
-  companies: string[]
-  years: number[]
-  metrics: string[]
-}> {
-  const res = await fetch(`${API_BASE}/financials/coverage`, { credentials: 'include' })
-  if (!res.ok) throw new Error('Failed to fetch coverage')
-  return res.json()
-}
-
 // Usage / budget
 export interface Usage {
   limit: number
