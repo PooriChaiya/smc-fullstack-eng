@@ -303,31 +303,17 @@ export function ChatView({ conversationId, onTurnComplete }: ChatViewProps) {
 
 function MessageRow({ msg, thinking }: { msg: ApiMessage; thinking: boolean }) {
   const isUser = msg.role === 'user'
+  const hasStreamingTools = msg.tool_calls?.some(tc => !tc.result && !tc.error)
+
   return (
     <Box sx={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
-      <Box sx={{ width: '100%', maxWidth: 720 }}>
-        <Paper
-          variant={isUser ? 'elevation' : 'outlined'}
-          elevation={isUser ? 0 : 0}
-          sx={{
-            px: 2,
-            py: 1.5,
-            display: 'inline-block',
-            bgcolor: isUser ? 'primary.main' : 'background.paper',
-            color: isUser ? 'primary.contrastText' : 'text.primary',
-            borderTopLeftRadius: isUser ? 10 : 2,
-            borderTopRightRadius: isUser ? 2 : 10,
-          }}
-        >
-          {isUser ? (
-            <Typography sx={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Typography>
-          ) : msg.content ? (
-            <MarkdownMessage content={msg.content} />
-          ) : thinking ? (
-            <TypingDots />
-          ) : null}
-        </Paper>
-
+      <Box sx={{ width: 'fit-content', maxWidth: 720 }}>
+        {thinking && !hasStreamingTools && (
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <AutoAwesomeIcon fontSize="small" />
+            Thinking...
+          </Typography>
+        )}
         {msg.tool_calls?.map((tc) => (
           <ToolCallCard
             key={tc.id}
@@ -340,6 +326,33 @@ function MessageRow({ msg, thinking }: { msg: ApiMessage; thinking: boolean }) {
             isStreaming={!tc.result && !tc.error}
           />
         ))}
+        {/* Only show text bubble if there's content, or if it's a user message, or if it's actively thinking with no tools */}
+        {(msg.content || isUser || (thinking && !hasStreamingTools)) && (
+          <Paper
+            variant={isUser ? 'elevation' : 'outlined'}
+            elevation={isUser ? 0 : 0}
+            sx={{
+              px: 2,
+              py: 1.5,
+              display: 'inline-block',
+              bgcolor: isUser ? 'primary.main' : 'background.paper',
+              color: isUser ? 'primary.contrastText' : 'text.primary',
+              borderTopLeftRadius: isUser ? 10 : 2,
+              borderTopRightRadius: isUser ? 2 : 10,
+              maxWidth: '100%'
+            }}
+          >
+            {isUser ? (
+              <Typography sx={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Typography>
+            ) : msg.content ? (
+              <MarkdownMessage content={msg.content} />
+            ) : thinking && !hasStreamingTools ? (
+              <TypingDots />
+            ) : null}
+          </Paper>
+        )}
+
+
       </Box>
     </Box>
   )

@@ -1,7 +1,19 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, OnModuleInit } from '@nestjs/common'
 import { FinancialsService } from '../financials/financials.service.js'
 import { SqlValidatorService } from '../financials/sql-validator.service.js'
 import { jsonSchema } from 'ai'
+
+interface DataCoverage {
+  tickers: string[]
+  companies: string[]
+  years: number[]
+  metrics: string[]
+}
+
+// ponytail: simple in-memory cache with TTL, no external cache service
+let cachedCoverage: DataCoverage | null = null
+let cacheTime = 0
+const CACHE_TTL = 5 * 60 * 1000 // 5 minutes
 
 interface ToolResult {
   result?: unknown
@@ -39,20 +51,57 @@ const TOOLS = {
 }
 
 @Injectable()
-export class LlmService {
+export class LlmService implements OnModuleInit {
   constructor(
     private financials: FinancialsService,
     private validator: SqlValidatorService,
   ) {}
 
-  getSystemPrompt(): string {
+  async onModuleInit() {
+    // Pre-fetch coverage on startup
+    await this.getCoverageWithCache()
+  }
+
+  private async getCoverageWithCache(): Promise<DataCoverage> {
+    const now = Date.now()
+    if (cachedCoverage && (now - cacheTime) < CACHE_TTL) {
+      return cachedCoverage
+    }
+    cachedCoverage = await this.financials.getDataCoverage()
+    cacheTime = now
+    return cachedCoverage
+  }
+
+  private hasDataFor(ticker?: string, company?: string, year?: number): boolean {
+    if (!cachedCoverage) return true
+    if (ticker && !cachedCoverage.tickers.includes(ticker.toUpperCase())) return false
+    if (company && !cachedCoverage.companies.some(c => c.toLowerCase().includes(company.toLowerCase()))) return false
+    if (year && !cachedCoverage.years.includes(year)) return false
+    return true
+  }
+
+  async getDataCoverage(): Promise<DataCoverage> {
+    return this.getCoverageWithCache()
+  }
+
+  async getSystemPrompt(): Promise<string> {
+    const coverage = await this.getCoverageWithCache()
+    const coverageInfo = `AVAILABLE DATA:
+- Tickers: ${coverage.tickers.slice(0, 10).join(', ')}${coverage.tickers.length > 10 ? '...' : ''} (${coverage.tickers.length} total)
+- Companies: ${coverage.companies.slice(0, 5).join(', ')}${coverage.companies.length > 5 ? '...' : ''} (${coverage.companies.length} total)
+- Years: ${coverage.years.join(', ')} (${coverage.years.length} years)
+- Metrics: ${coverage.metrics.join(', ')}`
+
     return `You are a financial analysis assistant that helps users query company financial data.
+
+${coverageInfo}
 
 IMPORTANT RULES:
 1. You have NO prior knowledge of company financials beyond what tool results provide. Never answer from training data - always use tools.
 2. When a user asks about specific financial figures, you MUST use the execute_financial_query tool with a complete SQL query.
-3. For questions about what data is available, use get_data_coverage.
-4. When you get zero rows from a query, explicitly state that the data is unavailable and what's missing (company, year, or metric).
+3. Check if data exists BEFORE querying. If user asks for unavailable data (ticker/company/year not in AVAILABLE DATA), tell them immediately: "No data available for [X]. Available: [list what exists]."
+4. For questions about what data is available, use get_data_coverage.
+5. When you get zero rows from a query, explicitly state that the data is unavailable and what's missing (company, year, or metric).
 
 CRITICAL: After receiving tool results, you MUST present the data in a human-readable format. NEVER output raw JSON or tool results directly.
 
@@ -78,8 +127,10 @@ Table schema for financial_data:
 HOW TO USE execute_financial_query:
 You MUST provide a complete SQL query in the "sql" parameter. Examples:
 - "SELECT revenue, net_income FROM financials.financial_data WHERE ticker='AAPL' AND year=2024"
-- "SELECT ticker, revenue FROM financials.financial_data ORDER BY revenue DESC LIMIT 10"
-- "SELECT year, AVG(revenue) as avg_revenue FROM financials.financial_data WHERE ticker='AAPL' GROUP BY year ORDER BY year"
+- "SELECT ticker, revenue FROM financials.financial_data ORDER BY revenue DESC NULLS LAST LIMIT 10"
+- "SELECT year, AVG(revenue) as avg_revenue FROM financials.financial_data WHERE ticker='AAPL' GROUP BY year ORDER BY year NULLS LAST"
+
+CRITICAL: When using ORDER BY, ALWAYS add NULLS LAST for DESC and NULLS FIRST for ASC to ensure NULL values don't misleadingly appear at the top/bottom.
 
 Always include the sql parameter with a valid SELECT query. Never call the tool with empty arguments.
 
@@ -125,7 +176,7 @@ Keep responses concise and focused on the data.`
     }
 
     if (toolName === 'get_data_coverage') {
-      const coverage = await this.financials.getDataCoverage()
+      const coverage = await this.getCoverageWithCache()
       return { result: coverage }
     }
 

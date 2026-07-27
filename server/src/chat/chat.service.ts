@@ -10,7 +10,8 @@ import { LlmProviderFactory } from '../llm/providers/llm-provider.factory.js'
 
 export type StreamPartType =
   | 'text-delta'
-  | 'tool-call'
+  | 'tool-input-start'
+  | 'tool-input-delta'
   | 'tool-output-available'
   | 'tool-output-error'
   | 'finish'
@@ -75,7 +76,7 @@ export class ChatService {
             this.llmProvider.getDefaultModel(),
             { nonRetrying: true },
           ),
-          system: this.llm.getSystemPrompt(),
+          system: await this.llm.getSystemPrompt(),
           messages,
           tools: toolsDef as any,
           abortSignal: signal,
@@ -103,12 +104,15 @@ export class ChatService {
                 toolName: chunk.toolName,
                 args: '',
               })
-              onChunk({ type: 'tool-call', data: { toolCallId: chunk.id, toolName: chunk.toolName } })
+              onChunk({ type: 'tool-input-start', data: { toolCallId: chunk.id, toolName: chunk.toolName } })
               break
 
             case 'tool-input-delta':
               const tc2 = toolCalls.find(x => x.toolCallId === chunk.id)
-              if (tc2) tc2.args += chunk.delta
+              if (tc2) {
+                tc2.args += chunk.delta
+                onChunk({ type: 'tool-input-delta', data: { toolCallId: chunk.id, argsDelta: chunk.delta } })
+              }
               break
 
             case 'tool-input-end':
@@ -189,13 +193,9 @@ export class ChatService {
       }
     } finally {
       // 6. Persist assistant message
-      if (!accumulatedText && toolCalls.length === 0) {
-        status = 'error'
-      }
-
-      const content = toolCalls.length > 0
-        ? JSON.stringify(toolCalls)
-        : accumulatedText
+      // Only store text content. Tool calls are persisted separately in tool_calls table.
+      // If LLM didn't generate text (empty after tool results), that's a partial response — still OK.
+      const content = accumulatedText || ''
 
       await this.messagesRepo.updateContent(assistantMsg.id, content)
       await this.messagesRepo.updateStatus(assistantMsg.id, status)

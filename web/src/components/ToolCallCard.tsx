@@ -42,10 +42,20 @@ function extractSql(argsStr: string): string | null {
   }
 }
 
-function displayTitle(toolName: string) {
-  if (toolName === 'execute_financial_query') return 'SQL Query'
-  if (toolName === 'get_data_coverage') return 'Data Coverage'
-  return toolName
+function displayTitle(toolName: string, isStreaming: boolean) {
+  if (toolName === 'execute_financial_query') return isStreaming ? 'Querying SQL...' : 'SQL Query'
+  if (toolName === 'get_data_coverage') return isStreaming ? 'Loading data...' : 'Data Coverage'
+  return isStreaming ? `Running ${toolName}...` : toolName
+}
+
+function formatCellValue(val: unknown): string {
+  if (val === null || val === undefined) return ''
+  const str = String(val)
+  // Clean up any trailing non-numeric characters from corrupted data
+  if (/^\d+/.test(str)) {
+    return str.replace(/[^0-9.\-]+/g, '')
+  }
+  return str
 }
 
 export function ToolCallCard({
@@ -77,6 +87,8 @@ export function ToolCallCard({
     <Chip label="Pending" size="small" variant="outlined" />
   )
 
+  const title = displayTitle(toolName, isStreaming)
+
   const meta: string[] = []
   if (durationMs != null) meta.push(`${durationMs}ms`)
   if (rowCount != null) meta.push(`${rowCount} ${rowCount === 1 ? 'row' : 'rows'}`)
@@ -92,7 +104,7 @@ export function ToolCallCard({
       <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ minHeight: 44, '& .MuiAccordionSummary-content': { my: 0.5 } }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', width: '100%', pr: 1 }}>
           <TerminalIcon fontSize="small" color="action" />
-          <Typography variant="body2" fontWeight={600}>{displayTitle(toolName)}</Typography>
+          <Typography variant="body2" fontWeight={600}>{title}</Typography>
           {status}
           <Box sx={{ flexGrow: 1 }} />
           {meta.map((m) => (
@@ -132,12 +144,12 @@ export function ToolCallCard({
 
         {/* Tabular result */}
         {result?.columns && result?.rows && (
-          <TableContainer component={Paper} variant="outlined" sx={{ mt: 1 }}>
-            <Table size="small">
+          <TableContainer component={Paper} variant="outlined" sx={{ mt: 1, maxWidth: '100%', overflowX: 'auto' }}>
+            <Table size="small" sx={{ tableLayout: 'auto' }}>
               <TableHead>
                 <TableRow>
                   {result.columns.map((col) => (
-                    <TableCell key={col} sx={{ fontWeight: 600 }}>{col}</TableCell>
+                    <TableCell key={col} sx={{ fontWeight: 600, whiteSpace: 'nowrap' }}>{col}</TableCell>
                   ))}
                 </TableRow>
               </TableHead>
@@ -145,7 +157,7 @@ export function ToolCallCard({
                 {result.rows.slice(0, 10).map((row, i) => (
                   <TableRow key={i} hover>
                     {result.columns!.map((col) => (
-                      <TableCell key={col}>{String(row[col] ?? '')}</TableCell>
+                      <TableCell key={col} sx={{ whiteSpace: 'nowrap' }}>{formatCellValue(row[col] ?? '')}</TableCell>
                     ))}
                   </TableRow>
                 ))}
