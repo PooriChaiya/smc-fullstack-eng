@@ -31,6 +31,7 @@ interface ConversationSidebarProps {
 
 function formatRelative(dateStr: string) {
   const d = new Date(dateStr)
+  if (isNaN(d.getTime())) return '' // Handle invalid dates
   const days = Math.floor((Date.now() - d.getTime()) / 86_400_000)
   if (days === 0) return 'Today'
   if (days === 1) return 'Yesterday'
@@ -106,7 +107,7 @@ export function ConversationSidebar({
             >
               <ListItemText
                 primary={conv.title || 'Untitled chat'}
-                secondary={formatRelative(conv.updatedAt)}
+                secondary={formatRelative(conv.updatedAt) || undefined}
                 primaryTypographyProps={{ noWrap: true, fontSize: 14 }}
                 secondaryTypographyProps={{ fontSize: 12 }}
               />

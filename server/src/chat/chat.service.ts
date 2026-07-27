@@ -11,8 +11,8 @@ import { LlmProviderFactory } from '../llm/providers/llm-provider.factory.js'
 export type StreamPartType =
   | 'text-delta'
   | 'tool-call'
-  | 'tool-result'
-  | 'tool-error'
+  | 'tool-output-available'
+  | 'tool-output-error'
   | 'finish'
   | 'error'
 
@@ -152,9 +152,9 @@ export class ChatService {
 
           // Emit to client
           if (result.error) {
-            onChunk({ type: 'tool-error', data: { toolCallId: tc.toolCallId, error: result.error } })
+            onChunk({ type: 'tool-output-error', data: { toolCallId: tc.toolCallId, error: result.error } })
           } else {
-            onChunk({ type: 'tool-result', data: { toolCallId: tc.toolCallId, result: result.result, rowCount: result.rowCount } })
+            onChunk({ type: 'tool-output-available', data: { toolCallId: tc.toolCallId, result: result.result, rowCount: result.rowCount } })
           }
 
           // Persist tool call

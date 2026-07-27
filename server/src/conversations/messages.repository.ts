@@ -56,11 +56,12 @@ export class MessagesRepository {
               jsonb_agg(
                 jsonb_build_object(
                   'id', tc.id,
-                  'toolName', tc.tool_name,
+                  'messageId', tc.message_id,
+                  'tool_name', tc.tool_name,
                   'arguments', tc.arguments,
                   'result', tc.result,
-                  'rowCount', tc.row_count,
-                  'durationMs', tc.duration_ms,
+                  'row_count', tc.row_count,
+                  'duration_ms', tc.duration_ms,
                   'error', tc.error,
                   'createdAt', tc.created_at
                 ) ORDER BY tc.created_at
