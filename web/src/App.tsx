@@ -20,6 +20,14 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/c/:conversationId"
+            element={
+              <ProtectedRoute>
+                <ChatLayout />
+              </ProtectedRoute>
+            }
+          />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

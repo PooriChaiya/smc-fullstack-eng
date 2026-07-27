@@ -45,7 +45,11 @@ export function ChatView({ conversationId, onTurnComplete }: ChatViewProps) {
     setLoadingHistory(true)
     setLimitError(null)
     getMessages(conversationId)
-      .then(setMessages)
+      .then((msgs) => {
+        // Filter out incomplete streaming messages from interrupted sessions
+        // (empty content + status=streaming means the connection was dropped)
+        setMessages(msgs.filter(m => !(m.role === 'assistant' && m.status === 'streaming' && !m.content)))
+      })
       .finally(() => setLoadingHistory(false))
   }, [conversationId])
 

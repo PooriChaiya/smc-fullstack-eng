@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useParams, useNavigate } from 'react-router-dom'
 import {
   Box,
   Paper,
@@ -29,17 +30,21 @@ export function ChatLayout() {
   const { user, logout } = useAuth()
   const { mode, toggle } = useColorMode()
   const { conversations, loading, error, reload, create, delete: deleteConv } = useConversations()
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const { conversationId } = useParams<{ conversationId?: string }>()
+  const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
   const [menuAnchor, setMenuAnchor] = useState<null | HTMLElement>(null)
   const [usageRefresh, setUsageRefresh] = useState(0)
 
+  // Sync URL with active conversation
+  const activeId = conversationId ?? null
+
   const handleCreate = async () => {
     setCreating(true)
     try {
       const conv = await create()
-      setActiveId(conv.id)
+      navigate(`/c/${conv.id}`)
       setMobileOpen(false)
     } finally {
       setCreating(false)
@@ -48,7 +53,7 @@ export function ChatLayout() {
 
   const handleDelete = async (id: string) => {
     await deleteConv(id)
-    if (activeId === id) setActiveId(null)
+    if (activeId === id) navigate('/')
   }
 
   // ⌘K / Ctrl+K → new chat
@@ -72,7 +77,7 @@ export function ChatLayout() {
       error={error}
       creating={creating}
       onSelect={(id) => {
-        setActiveId(id)
+        navigate(`/c/${id}`)
         setMobileOpen(false)
       }}
       onCreate={handleCreate}
