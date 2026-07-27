@@ -36,6 +36,7 @@ export function ChatView({ conversationId, onTurnComplete }: ChatViewProps) {
   const [isLoading, setIsLoading] = useState(false)
   const [limitError, setLimitError] = useState<LimitExceeded | null>(null)
   const [isScrolledUp, setIsScrolledUp] = useState(false)
+  const [pendingStreaming, setPendingStreaming] = useState<Set<string>>(new Set())
   const abortRef = useRef<AbortController | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -46,12 +47,64 @@ export function ChatView({ conversationId, onTurnComplete }: ChatViewProps) {
     setLimitError(null)
     getMessages(conversationId)
       .then((msgs) => {
-        // Filter out incomplete streaming messages from interrupted sessions
-        // (empty content + status=streaming means the connection was dropped)
-        setMessages(msgs.filter(m => !(m.role === 'assistant' && m.status === 'streaming' && !m.content)))
+        setMessages(msgs)
+        // Detect any streaming messages that need polling
+        const streamingIds = new Set(
+          msgs.filter(m => m.role === 'assistant' && m.status === 'streaming').map(m => m.id)
+        )
+        setPendingStreaming(streamingIds)
       })
       .finally(() => setLoadingHistory(false))
   }, [conversationId])
+
+  // Poll for completion of streaming messages (resume after refresh)
+  useEffect(() => {
+    if (pendingStreaming.size === 0) return
+
+    const POLL_INTERVAL = 1500 // check every 1.5s
+    const TIMEOUT = 30000 // 30s max
+    const startTime = Date.now()
+
+    const interval = setInterval(async () => {
+      if (Date.now() - startTime > TIMEOUT) {
+        // Timeout - mark as stopped
+        clearInterval(interval)
+        setPendingStreaming(new Set())
+        setMessages((prev) =>
+          prev.map((m) =>
+            pendingStreaming.has(m.id) ? { ...m, status: 'stopped' as const } : m
+          )
+        )
+        return
+      }
+
+      try {
+        const fresh = await getMessages(conversationId)
+        const stillStreaming = fresh.filter(m => m.role === 'assistant' && m.status === 'streaming')
+        const streamingIds = new Set(stillStreaming.map(m => m.id))
+
+        if (streamingIds.size === 0 || streamingIds.size < pendingStreaming.size) {
+          // One or more completed
+          setMessages(fresh)
+          if (streamingIds.size === 0) {
+            clearInterval(interval)
+            setPendingStreaming(new Set())
+          } else {
+            setPendingStreaming(streamingIds)
+          }
+        } else {
+          // Still streaming, update with latest content
+          setMessages(fresh)
+        }
+      } catch {
+        // Network error - stop polling
+        clearInterval(interval)
+        setPendingStreaming(new Set())
+      }
+    }, POLL_INTERVAL)
+
+    return () => clearInterval(interval)
+  }, [conversationId, pendingStreaming])
 
   // Auto-scroll to bottom unless the user has scrolled up.
   useEffect(() => {
@@ -268,7 +321,12 @@ export function ChatView({ conversationId, onTurnComplete }: ChatViewProps) {
         ) : (
           <Stack spacing={3} sx={{ maxWidth: 820, mx: 'auto' }}>
             {rendered.map((msg) => (
-              <MessageRow key={msg.id} msg={msg} thinking={msg.id === 'streaming' && isThinking} />
+              <MessageRow
+                key={msg.id}
+                msg={msg}
+                thinking={msg.id === 'streaming' && isThinking}
+                pending={pendingStreaming.has(msg.id)}
+              />
             ))}
           </Stack>
         )}
@@ -305,17 +363,17 @@ export function ChatView({ conversationId, onTurnComplete }: ChatViewProps) {
   )
 }
 
-function MessageRow({ msg, thinking }: { msg: ApiMessage; thinking: boolean }) {
+function MessageRow({ msg, thinking, pending }: { msg: ApiMessage; thinking: boolean; pending?: boolean }) {
   const isUser = msg.role === 'user'
   const hasStreamingTools = msg.tool_calls?.some(tc => !tc.result && !tc.error)
 
   return (
     <Box sx={{ display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start' }}>
       <Box sx={{ width: 'fit-content', maxWidth: 720 }}>
-        {thinking && !hasStreamingTools && (
+        {(pending || thinking) && !hasStreamingTools && (
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
             <AutoAwesomeIcon fontSize="small" />
-            Thinking...
+            {pending ? 'Reconnecting to stream...' : 'Thinking...'}
           </Typography>
         )}
         {msg.tool_calls?.map((tc) => (
@@ -331,7 +389,7 @@ function MessageRow({ msg, thinking }: { msg: ApiMessage; thinking: boolean }) {
           />
         ))}
         {/* Only show text bubble if there's content, or if it's a user message, or if it's actively thinking with no tools */}
-        {(msg.content || isUser || (thinking && !hasStreamingTools)) && (
+        {(msg.content || isUser || (thinking && !hasStreamingTools) || (pending && !hasStreamingTools)) && (
           <Paper
             variant={isUser ? 'elevation' : 'outlined'}
             elevation={isUser ? 0 : 0}
@@ -350,7 +408,7 @@ function MessageRow({ msg, thinking }: { msg: ApiMessage; thinking: boolean }) {
               <Typography sx={{ whiteSpace: 'pre-wrap' }}>{msg.content}</Typography>
             ) : msg.content ? (
               <MarkdownMessage content={msg.content} />
-            ) : thinking && !hasStreamingTools ? (
+            ) : (thinking || pending) && !hasStreamingTools ? (
               <TypingDots />
             ) : null}
           </Paper>
