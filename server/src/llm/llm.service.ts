@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { FinancialsService } from '../financials/financials.service.js'
 import { SqlValidatorService } from '../financials/sql-validator.service.js'
+import { jsonSchema } from 'ai'
 
 interface ToolResult {
   result?: unknown
@@ -9,41 +10,33 @@ interface ToolResult {
   error?: string
 }
 
-// Tool definitions for OpenAI
-const TOOLS = [
-  {
-    type: 'function' as const,
-    function: {
-      name: 'execute_financial_query',
-      description: 'Execute a SQL query against the financial data. Use this to retrieve specific financial metrics.',
-      parameters: {
-        type: 'object',
-        properties: {
-          sql: {
-            type: 'string',
-            description: 'The SQL SELECT query to execute. Use table name: financials.financial_data or financial_data',
-          },
-          rationale: {
-            type: 'string',
-            description: 'Brief explanation of why this query answers the user question',
-          },
+// Tool definitions using JSON Schema format (not Zod) to ensure 'required' field is set correctly
+const TOOLS = {
+  execute_financial_query: {
+    description: 'Execute a SQL query against the financial data. REQUIRED: You MUST provide the "sql" parameter with a valid SELECT query. Do NOT call this tool without a SQL query.',
+    inputSchema: jsonSchema({
+      type: 'object',
+      properties: {
+        sql: {
+          type: 'string',
+          description: 'The SQL SELECT query to execute. Use table name: financials.financial_data or financial_data.',
         },
-        required: ['sql', 'rationale'],
+        rationale: {
+          type: 'string',
+          description: 'Brief explanation of why this query answers the user question',
+        },
       },
-    },
+      required: ['sql'],
+    }),
   },
-  {
-    type: 'function' as const,
-    function: {
-      name: 'get_data_coverage',
-      description: 'Get information about what data is available - tickers, companies, years, and metrics.',
-      parameters: {
-        type: 'object',
-        properties: {},
-      },
-    },
+  get_data_coverage: {
+    description: 'Get information about what data is available - tickers, companies, years, and metrics.',
+    inputSchema: jsonSchema({
+      type: 'object',
+      properties: {},
+    }),
   },
-]
+}
 
 @Injectable()
 export class LlmService {
@@ -57,14 +50,14 @@ export class LlmService {
 
 IMPORTANT RULES:
 1. You have NO prior knowledge of company financials beyond what tool results provide. Never answer from training data - always use tools.
-2. When a user asks about specific financial figures, you MUST use the execute_financial_query tool.
+2. When a user asks about specific financial figures, you MUST use the execute_financial_query tool with a complete SQL query.
 3. For questions about what data is available, use get_data_coverage.
 4. When you get zero rows from a query, explicitly state that the data is unavailable and what's missing (company, year, or metric).
-5. For multi-row results, present them as a Markdown table.
-6. For trends and comparisons, present a table AND a fenced chart block using this format:
-\`\`\`chart
-{"type":"bar","x":"year","series":["revenue","net_income"],"data":[...],"title":"Title here"}
-\`\`\`
+
+RESPONSE FORMAT:
+- Single data point: State it directly in text.
+- Multi-row results (3+ rows): Present as a Markdown table.
+- Trends, comparisons, time-series data: Present as a table AND suggest a chart format.
 
 Table schema for financial_data:
 - ticker (e.g., "AAPL", "TSLA")
@@ -74,6 +67,14 @@ Table schema for financial_data:
 - gross_profit (numeric)
 - operating_income (numeric)
 - net_income (numeric)
+
+HOW TO USE execute_financial_query:
+You MUST provide a complete SQL query in the "sql" parameter. Examples:
+- "SELECT revenue, net_income FROM financials.financial_data WHERE ticker='AAPL' AND year=2024"
+- "SELECT ticker, revenue FROM financials.financial_data ORDER BY revenue DESC LIMIT 10"
+- "SELECT year, AVG(revenue) as avg_revenue FROM financials.financial_data WHERE ticker='AAPL' GROUP BY year ORDER BY year"
+
+Always include the sql parameter with a valid SELECT query. Never call the tool with empty arguments.
 
 Keep responses concise and focused on the data.`
   }
@@ -85,7 +86,12 @@ Keep responses concise and focused on the data.`
   // Execute tool and return result
   async executeToolCall(toolName: string, args: Record<string, unknown>): Promise<ToolResult> {
     if (toolName === 'execute_financial_query') {
-      const { sql, rationale } = args as { sql: string; rationale: string }
+      const { sql, rationale } = args as { sql?: string; rationale?: string }
+
+      // Validate required params
+      if (!sql || typeof sql !== 'string' || !sql.trim()) {
+        return { error: 'SQL query is required and cannot be empty', result: null }
+      }
 
       // Validate SQL
       const validation = this.validator.validate(sql)
