@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common'
-import { OpenAI } from 'openai'
 import { FinancialsService } from '../financials/financials.service.js'
 import { SqlValidatorService } from '../financials/sql-validator.service.js'
 
@@ -48,14 +47,10 @@ const TOOLS = [
 
 @Injectable()
 export class LlmService {
-  private openai: OpenAI
-
   constructor(
     private financials: FinancialsService,
     private validator: SqlValidatorService,
-  ) {
-    this.openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  }
+  ) {}
 
   getSystemPrompt(): string {
     return `You are a financial analysis assistant that helps users query company financial data.
@@ -124,7 +119,4 @@ Keep responses concise and focused on the data.`
     return { error: `Unknown tool: ${toolName}`, result: null }
   }
 
-  getOpenai() {
-    return this.openai
-  }
 }

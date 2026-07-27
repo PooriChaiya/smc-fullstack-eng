@@ -1,6 +1,6 @@
 import { Controller, Post, Get, Body, Req, Res, HttpStatus, UseGuards } from '@nestjs/common'
 import type { Request, Response } from 'express'
-import { AuthService } from './auth.service.js'
+import { AuthService, SESSION_TTL_SECONDS } from './auth.service.js'
 import { SessionGuard } from './session.guard.js'
 
 @Controller('auth')
@@ -18,7 +18,7 @@ export class AuthController {
     res.cookie('session', result.token, {
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10) * 1000,
+      maxAge: SESSION_TTL_SECONDS * 1000,
     })
 
     res.json({ userId: result.userId })
@@ -35,7 +35,7 @@ export class AuthController {
     res.cookie('session', result.token, {
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10) * 1000,
+      maxAge: SESSION_TTL_SECONDS * 1000,
     })
 
     res.json({ userId: result.userId })

@@ -4,9 +4,10 @@ import { promisify } from 'util'
 import { Redis } from 'ioredis'
 import pg from 'pg'
 
-const { Pool }: { Pool: new (config?: pg.PoolConfig) => pg.Pool } = pg
-
 const scryptAsync = promisify(scrypt)
+
+// ponytail: read once at startup; the env is static for the process lifetime.
+export const SESSION_TTL_SECONDS = Number(process.env.SESSION_TTL_SECONDS ?? 86400)
 
 @Injectable()
 export class AuthService {
@@ -34,8 +35,7 @@ export class AuthService {
 
     // Create session token for auto-login
     const token = randomBytes(32).toString('base64url')
-    const ttl = parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10)
-    await this.redis.set(`session:${token}`, rows[0].id, 'EX', ttl)
+    await this.redis.set(`session:${token}`, rows[0].id, 'EX', SESSION_TTL_SECONDS)
 
     return { token, userId: rows[0].id }
   }
@@ -58,24 +58,13 @@ export class AuthService {
 
     // Create session token
     const token = randomBytes(32).toString('base64url')
-    const ttl = parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10)
-
-    await this.redis.set(`session:${token}`, rows[0].id, 'EX', ttl)
+    await this.redis.set(`session:${token}`, rows[0].id, 'EX', SESSION_TTL_SECONDS)
 
     return { token, userId: rows[0].id }
   }
 
   async logout(token: string) {
     await this.redis.del(`session:${token}`)
-  }
-
-  async validateSession(token: string): Promise<string | null> {
-    const userId = await this.redis.get(`session:${token}`)
-    if (!userId) return null
-    // Refresh TTL on activity
-    const ttl = parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10)
-    await this.redis.expire(`session:${token}`, ttl)
-    return userId
   }
 
   async getUserById(userId: string) {

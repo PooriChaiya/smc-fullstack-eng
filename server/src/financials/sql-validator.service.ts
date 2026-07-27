@@ -1,10 +1,6 @@
-import { Injectable, BadRequestException } from '@nestjs/common'
-import pg from 'pg'
-
-const { Pool } = pg
+import { Injectable } from '@nestjs/common'
 
 const ALLOWED_TABLES = ['financials.financial_data', 'financial_data']
-const MAX_LIMIT = 200
 const DEFAULT_LIMIT = 200
 
 @Injectable()

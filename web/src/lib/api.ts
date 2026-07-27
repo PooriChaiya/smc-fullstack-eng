@@ -116,22 +116,6 @@ export async function getMessages(conversationId: string): Promise<Message[]> {
   return res.json()
 }
 
-export async function createMessage(
-  conversationId: string,
-  role: 'user' | 'assistant',
-  content: string,
-  toolCalls?: Omit<ToolCall, 'id' | 'messageId' | 'createdAt'>[]
-): Promise<Message> {
-  const res = await fetch(`${API_BASE}/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'include',
-    body: JSON.stringify({ role, content, toolCalls }),
-  })
-  if (!res.ok) throw new Error('Failed to create message')
-  return res.json()
-}
-
 // Financials API
 export async function queryFinancials(sql: string): Promise<{
   columns: string[]

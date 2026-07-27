@@ -15,23 +15,16 @@ export class FinancialsService {
   async executeQuery(sql: string): Promise<QueryResult> {
     const startTime = Date.now()
 
-    try {
-      // Set statement timeout for this query
-      await this.db.query('SET LOCAL statement_timeout = 5000')
+    // Set statement timeout for this query
+    await this.db.query('SET LOCAL statement_timeout = 5000')
 
-      const result = await this.db.query(sql)
+    const result = await this.db.query(sql)
 
-      return {
-        columns: result.fields.map(f => f.name),
-        rows: result.rows,
-        rowCount: result.rowCount || 0,
-        durationMs: Date.now() - startTime,
-      }
-    } catch (error) {
-      if (error instanceof Error) {
-        throw new Error(`Query execution failed: ${error.message}`)
-      }
-      throw error
+    return {
+      columns: result.fields.map(f => f.name),
+      rows: result.rows,
+      rowCount: result.rowCount || 0,
+      durationMs: Date.now() - startTime,
     }
   }
 

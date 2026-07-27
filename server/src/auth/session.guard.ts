@@ -1,6 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException, Inject } from '@nestjs/common'
 import type { Request } from 'express'
 import { Redis } from 'ioredis'
+import { SESSION_TTL_SECONDS } from './auth.service.js'
 
 @Injectable()
 export class SessionGuard implements CanActivate {
@@ -20,8 +21,7 @@ export class SessionGuard implements CanActivate {
     }
 
     // Refresh TTL on activity
-    const ttl = parseInt(process.env.SESSION_TTL_SECONDS ?? '86400', 10)
-    await this.redis.expire(`session:${token}`, ttl)
+    await this.redis.expire(`session:${token}`, SESSION_TTL_SECONDS)
 
     req['userId'] = userId
     return true

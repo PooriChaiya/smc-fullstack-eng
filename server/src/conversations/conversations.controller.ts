@@ -27,13 +27,4 @@ export class ConversationsController {
     await this.conversationsService.delete(id, req.userId)
     return { success: true }
   }
-
-  @Post(':id/messages')
-  async addMessage(
-    @Param('id') id: string,
-    @Body() body: { content: string },
-    @Req() req: { userId: string },
-  ) {
-    return this.conversationsService.addUserMessage(id, req.userId, body.content)
-  }
 }
