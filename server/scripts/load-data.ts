@@ -2,14 +2,16 @@
 /**
  * Idempotent data loader.
  * Creates two schemas (app, financials), creates readonly_agent role, loads financial data.
- * Run with: tsx scripts/load-data.ts
+ * Run from server/: npm run load-data
  */
 
 import { Client } from 'pg'
 import { readFileSync } from 'fs'
-import { join } from 'path'
+import { dirname, join } from 'path'
+import { fileURLToPath } from 'url'
 
-const SQL_FILE = join(__dirname, '../data/financial_data.sql')
+const __dirname = dirname(fileURLToPath(import.meta.url))
+const SQL_FILE = join(__dirname, '../../data/financial_data.sql')
 
 async function main() {
   const client = new Client({ connectionString: process.env.DATABASE_URL ?? 'postgresql://app:dev@localhost:5432/smc' })
@@ -114,13 +116,36 @@ async function main() {
     // Load financial data
     const sql = readFileSync(SQL_FILE, 'utf8')
 
-    // Transform the SQL to use financials schema
-    const transformed = sql
-      .replace(/CREATE TABLE financial_data/, 'CREATE TABLE IF NOT EXISTS financials.company_financials')
-      .replace(/COPY financial_data/, 'COPY financials.company_financials')
-      .replace(/DROP TABLE IF EXISTS financial_data;/, '')
+    // The dump is psql's `COPY ... FROM stdin` text format (tab-delimited
+    // rows, \N = NULL), which the pg driver can't stream over query().
+    // Parse it into a single batched INSERT — 192 rows × 8 cols fits one query.
+    const lines = sql.split('\n')
+    const copyStart = lines.findIndex((l) => /^COPY\s+\w+/.test(l))
+    const copyEnd = lines.findIndex((l, i) => i > copyStart && l === '\\.')
 
-    await client.query(transformed)
+    // DDL above the COPY line (CREATE TABLE), rewritten to the financials schema.
+    const ddl = lines
+      .slice(0, copyStart)
+      .join('\n')
+      .replace(/CREATE TABLE financial_data/, 'CREATE TABLE IF NOT EXISTS financials.company_financials')
+      .replace(/DROP TABLE IF EXISTS financial_data;/, '')
+    await client.query(ddl)
+
+    const cols = lines[copyStart].match(/\((.*)\)/)![1].split(',').map((c) => c.trim())
+    const dataRows = lines.slice(copyStart + 1, copyEnd).filter((r) => r.trim() !== '')
+    const values: (string | null)[] = []
+    for (const r of dataRows) values.push(...r.split('\t').map((v) => (v === '\\N' ? null : v)))
+    const colCount = cols.length
+    const placeholders = dataRows
+      .map((_, i) => '(' + Array.from({ length: colCount }, (_, j) => `$${i * colCount + j + 1}`).join(', ') + ')')
+      .join(', ')
+
+    // Fresh load each run (table is CREATE IF NOT EXISTS).
+    await client.query('TRUNCATE financials.company_financials')
+    await client.query(
+      `INSERT INTO financials.company_financials (${cols.join(', ')}) VALUES ${placeholders}`,
+      values,
+    )
     console.log('Loaded financial data')
 
     // Verify row count

@@ -1,4 +1,7 @@
+# env files with secrets (templates named .env.example stay tracked)
 .env
+.env.local
+.env.*.local
 
 # server
 server/node_modules
