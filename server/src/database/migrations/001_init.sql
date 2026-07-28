@@ -5,7 +5,7 @@ CREATE EXTENSION IF NOT EXISTS citext;
 CREATE SCHEMA IF NOT EXISTS app;
 CREATE SCHEMA IF NOT EXISTS financials;
 
--- Create users table
+-- Create users table (email CITEXT UNIQUE already creates the lookup index)
 CREATE TABLE IF NOT EXISTS app.users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   email CITEXT UNIQUE NOT NULL,
@@ -13,13 +13,12 @@ CREATE TABLE IF NOT EXISTS app.users (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_users_email ON app.users(email);
-
--- Create readonly_agent role for financials queries
+-- Create readonly_agent role for financials queries. Password must match
+-- DATABASE_READONLY_URL in .env.
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'readonly_agent') THEN
-    CREATE ROLE readonly_agent WITH LOGIN PASSWORD 'readonly_password';
+    CREATE ROLE readonly_agent WITH LOGIN PASSWORD 'readonly';
   END IF;
 END
 $$;
