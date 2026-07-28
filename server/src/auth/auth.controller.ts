@@ -1,4 +1,5 @@
 import { Controller, Post, Get, Body, Req, Res, HttpStatus, UseGuards } from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import type { Request, Response } from 'express'
 import { AuthService, SESSION_TTL_SECONDS } from './auth.service.js'
 import { SessionGuard } from './session.guard.js'
@@ -8,6 +9,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ default: { limit: 5, ttl: 60000 } }) // 5 registrations/min
   async register(@Body() body: { email: string; password: string }, @Res() res: Response) {
     if (!body.email || !body.password) {
       return res.status(HttpStatus.BAD_REQUEST).json({ error: 'email and password required' })
@@ -18,6 +20,7 @@ export class AuthController {
     res.cookie('session', result.token, {
       httpOnly: true,
       sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
       maxAge: SESSION_TTL_SECONDS * 1000,
     })
 
@@ -25,6 +28,7 @@ export class AuthController {
   }
 
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 60000 } }) // 10 logins/min
   async login(@Body() body: { email: string; password: string }, @Res() res: Response) {
     if (!body.email || !body.password) {
       return res.status(HttpStatus.BAD_REQUEST).json({ error: 'email and password required' })
@@ -35,6 +39,7 @@ export class AuthController {
     res.cookie('session', result.token, {
       httpOnly: true,
       sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
       maxAge: SESSION_TTL_SECONDS * 1000,
     })
 
@@ -53,15 +58,15 @@ export class AuthController {
 
   @UseGuards(SessionGuard)
   @Get('me')
-  async me(@Req() req: Request) {
+  async me(@Req() req: Request, @Res() res: Response) {
     const userId = req.userId
     if (!userId) {
-      return { error: 'User not found' }
+      return res.status(HttpStatus.UNAUTHORIZED).json({ error: 'Unauthorized' })
     }
     const user = await this.authService.getUserById(userId)
     if (!user) {
-      return { error: 'User not found' }
+      return res.status(HttpStatus.NOT_FOUND).json({ error: 'User not found' })
     }
-    return user
+    return res.json(user)
   }
 }

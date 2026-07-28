@@ -49,6 +49,6 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_update_conversation_updated_at ON app.messages;
 CREATE TRIGGER trg_update_conversation_updated_at
-  AFTER INSERT ON app.messages
+  AFTER INSERT OR UPDATE OF status ON app.messages
   FOR EACH ROW
   EXECUTE FUNCTION app.update_conversation_updated_at();

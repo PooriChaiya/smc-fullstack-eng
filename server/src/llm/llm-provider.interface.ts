@@ -6,14 +6,8 @@ export interface ILlmProvider {
   /**
    * Get a language model instance for streaming with tools.
    * @param modelName - Model identifier (e.g., "gpt-4o", "claude-3-5-sonnet")
-   * @param options - Optional configuration
    */
-  getModel(modelName: string, options?: LlmModelOptions): LanguageModel
-}
-
-export interface LlmModelOptions {
-  /** Disable automatic retries on errors */
-  nonRetrying?: boolean
+  getModel(modelName: string): LanguageModel
 }
 
 /**

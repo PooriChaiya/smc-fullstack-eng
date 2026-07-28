@@ -40,10 +40,8 @@ export class ConversationsService {
   async addUserMessage(conversationId: string, userId: string, content: string) {
     // Verify ownership via findOne (will throw 404 if not owned)
     await this.conversationsRepo.findOne(conversationId, userId)
-    const seq = await this.conversationsRepo.nextSeq(conversationId)
     return this.messagesRepo.create({
       conversationId,
-      seq,
       role: 'user',
       content,
       status: 'complete',
@@ -53,10 +51,8 @@ export class ConversationsService {
   // Create a placeholder assistant message for streaming
   async createAssistantMessage(conversationId: string, userId: string) {
     await this.conversationsRepo.findOne(conversationId, userId)
-    const seq = await this.conversationsRepo.nextSeq(conversationId)
     return this.messagesRepo.create({
       conversationId,
-      seq,
       role: 'assistant',
       content: '',
       status: 'streaming',

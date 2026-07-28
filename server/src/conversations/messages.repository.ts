@@ -3,7 +3,6 @@ import pg from 'pg'
 
 interface CreateMessageDto {
   conversationId: string
-  seq: number
   role: 'user' | 'assistant'
   content: string
   status?: 'streaming' | 'complete' | 'stopped' | 'error'
@@ -26,9 +25,9 @@ export class MessagesRepository {
   async create(dto: CreateMessageDto) {
     const { rows } = await this.db.query(
       `INSERT INTO app.messages (conversation_id, seq, role, content, status)
-       VALUES ($1, $2, $3, $4, $5)
+       VALUES ($1, (SELECT COALESCE(MAX(seq), -1) + 1 FROM app.messages WHERE conversation_id = $1), $2, $3, $4)
        RETURNING id, conversation_id, seq, role, content, status, created_at`,
-      [dto.conversationId, dto.seq, dto.role, dto.content, dto.status || 'complete']
+      [dto.conversationId, dto.role, dto.content, dto.status || 'complete']
     )
     return rows[0]
   }

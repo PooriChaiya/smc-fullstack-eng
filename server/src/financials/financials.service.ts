@@ -15,9 +15,6 @@ export class FinancialsService {
   async executeQuery(sql: string): Promise<QueryResult> {
     const startTime = Date.now()
 
-    // Set statement timeout for this query
-    await this.db.query('SET LOCAL statement_timeout = 5000')
-
     const result = await this.db.query(sql)
 
     return {

@@ -59,13 +59,4 @@ export class ConversationsRepository {
       [id, userId, title],
     )
   }
-
-  // Next sequence number for a conversation
-  async nextSeq(conversationId: string): Promise<number> {
-    const { rows } = await this.db.query(
-      `SELECT COALESCE(MAX(seq), -1) + 1 as next_seq FROM app.messages WHERE conversation_id = $1`,
-      [conversationId],
-    )
-    return rows[0].next_seq
-  }
 }

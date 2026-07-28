@@ -72,21 +72,6 @@ export class LlmService implements OnModuleInit {
     return cachedCoverage
   }
 
-  private hasDataFor(ticker?: string, company?: string, year?: number): boolean {
-    if (!cachedCoverage) return true
-    if (ticker && !cachedCoverage.tickers.includes(ticker.toUpperCase())) return false
-    if (company) {
-      const normalizedSearch = company.toLowerCase().replace(/[^a-z0-9]/g, '')
-      const match = cachedCoverage.companies.some(c => {
-        const normalizedCompany = c.toLowerCase().replace(/[^a-z0-9]/g, '')
-        return normalizedCompany.includes(normalizedSearch) || normalizedSearch.includes(normalizedCompany)
-      })
-      if (!match) return false
-    }
-    if (year && !cachedCoverage.years.includes(year)) return false
-    return true
-  }
-
   async getDataCoverage(): Promise<DataCoverage> {
     return this.getCoverageWithCache()
   }
