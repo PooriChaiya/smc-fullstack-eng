@@ -63,7 +63,7 @@ export class ChatService {
     const toolCalls: ToolCallData[] = []
     let status: 'complete' | 'error' | 'stopped' = 'complete'
     let finishTokens: TokenUsage | null = null
-    const MAX_LOOPS = 3
+    const MAX_LOOPS = 5
 
     try {
       // 4. Tool-calling loop
@@ -120,8 +120,8 @@ export class ChatService {
 
             case 'finish':
               finishTokens = {
-                promptTokens: (chunk as any).totalUsage?.promptTokens ?? 0,
-                completionTokens: (chunk as any).totalUsage?.completionTokens ?? 0,
+                promptTokens: (chunk as any).totalUsage?.inputTokens ?? 0,
+                completionTokens: (chunk as any).totalUsage?.outputTokens ?? 0,
               }
               break
 
