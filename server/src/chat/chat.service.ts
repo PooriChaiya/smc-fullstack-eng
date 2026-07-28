@@ -67,7 +67,8 @@ export class ChatService {
 
     try {
       // 4. Tool-calling loop
-      for (let loop = 0; loop < MAX_LOOPS; loop++) {
+      outer: for (let loop = 0; loop < MAX_LOOPS; loop++) {
+        if (signal?.aborted) break outer
 
         const toolsDef = this.llm.getTools()
 
@@ -84,6 +85,8 @@ export class ChatService {
 
         // Stream chunks and collect tool calls
         for await (const chunk of result.fullStream) {
+          // ponytail: SDK doesn't reliably throw on abort — check the flag ourselves.
+          if (signal?.aborted) break outer
           switch (chunk.type) {
             case 'text-delta':
               accumulatedText += chunk.text
@@ -134,6 +137,7 @@ export class ChatService {
         // 5. Execute tools and collect results (filter current loop: calls without result yet)
         const pendingCalls = toolCalls.filter(tc => !tc.result && !tc.error)
         if (pendingCalls.length === 0) break
+        if (signal?.aborted) break outer
 
         const toolCallParts: Array<{ type: 'tool-call'; toolCallId: string; toolName: string; input: any }> = []
         const toolResultParts: Array<{ type: 'tool-result'; toolCallId: string; toolName: string; output: { type: 'json'; value: any } }> = []
@@ -183,15 +187,18 @@ export class ChatService {
         messages.push({ role: 'tool', content: toolResultParts } as any)
       }
 
+      if (signal?.aborted) status = 'stopped'
       onChunk({ type: 'finish', data: { usage: finishTokens } })
     } catch (e: unknown) {
-      if (e && typeof e === 'object' && 'name' in e && e.name === 'AbortError') {
+      if (signal?.aborted || (e && typeof e === 'object' && 'name' in e && e.name === 'AbortError')) {
         status = 'stopped'
       } else {
         status = 'error'
         onChunk({ type: 'error', data: { message: e instanceof Error ? e.message : 'Unknown error' } })
       }
     } finally {
+      // ponytail: catch signal-aborted paths the SDK swallowed silently.
+      if (signal?.aborted && status !== 'error') status = 'stopped'
       // 6. Persist assistant message
       // Only store text content. Tool calls are persisted separately in tool_calls table.
       // If LLM didn't generate text (empty after tool results), that's a partial response — still OK.

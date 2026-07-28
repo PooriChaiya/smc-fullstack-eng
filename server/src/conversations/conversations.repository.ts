@@ -17,12 +17,10 @@ export class ConversationsRepository {
 
   async findAll(userId: string) {
     const { rows } = await this.db.query(
-      `SELECT c.id, c.title, c.created_at, c.updated_at
-       FROM app.conversations c
-       INNER JOIN app.messages m ON m.conversation_id = c.id
-       WHERE c.user_id = $1
-       GROUP BY c.id, c.title, c.created_at, c.updated_at
-       ORDER BY c.updated_at DESC`,
+      `SELECT id, title, created_at, updated_at
+       FROM app.conversations
+       WHERE user_id = $1
+       ORDER BY updated_at DESC`,
       [userId],
     )
     return rows

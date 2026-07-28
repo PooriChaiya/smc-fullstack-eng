@@ -38,8 +38,11 @@ export class ChatController {
     res.setHeader('Connection', 'keep-alive')
 
     // Client disconnect → abort the upstream stream; finally still accounts cost.
+    // ponytail: listen on both req and res — node fetch's abort only trips res.close.
     const abort = new AbortController()
-    req.on('close', () => abort.abort())
+    const onClose = () => { if (!abort.signal.aborted) abort.abort() }
+    req.on('close', onClose)
+    res.on('close', onClose)
 
     try {
       await this.chat.streamChat(
