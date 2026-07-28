@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { createOpenAI } from '@ai-sdk/openai'
-import { ILlmProvider, LlmModelOptions } from '../llm-provider.interface.js'
+import { ILlmProvider } from '../llm-provider.interface.js'
 
 /**
  * OpenAI provider implementation.
@@ -8,28 +8,11 @@ import { ILlmProvider, LlmModelOptions } from '../llm-provider.interface.js'
  */
 @Injectable()
 export class OpenAIProvider implements ILlmProvider {
-  private readonly defaultClient = createOpenAI({
+  private readonly client = createOpenAI({
     apiKey: process.env.OPENAI_API_KEY!,
   })
 
-  private readonly nonRetryingClient = createOpenAI({
-    apiKey: process.env.OPENAI_API_KEY!,
-    fetch: this.createNonRetryingFetch(),
-  })
-
-  getModel(modelName: string, options: LlmModelOptions = {}) {
-    const client = options.nonRetrying ? this.nonRetryingClient : this.defaultClient
-    return client(modelName)
-  }
-
-  private createNonRetryingFetch() {
-    return async (input: Request | string | URL, init?: RequestInit) => {
-      const response = await fetch(input, init)
-      if (!response.ok) {
-        const body = await response.text().catch(() => '')
-        throw new Error(`HTTP ${response.status}: ${body || response.statusText}`)
-      }
-      return response
-    }
+  getModel(modelName: string) {
+    return this.client(modelName)
   }
 }

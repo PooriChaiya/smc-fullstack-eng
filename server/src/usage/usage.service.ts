@@ -1,4 +1,4 @@
-import { Injectable, OnModuleInit, HttpException, HttpStatus, Inject } from '@nestjs/common'
+import { Injectable, HttpException, HttpStatus, Inject } from '@nestjs/common'
 import pg from 'pg'
 
 // gpt-4o-mini pricing per 1M tokens (USD). Change here if the model changes.
@@ -11,31 +11,11 @@ export interface TokenUsage {
 }
 
 @Injectable()
-export class UsageService implements OnModuleInit {
+export class UsageService {
   constructor(
     @Inject('REDIS') private redis: any,
     @Inject('DATABASE_POOL') private db: pg.Pool,
   ) {}
-
-  async onModuleInit() {
-    // ponytail: self-healing schema — the table exists regardless of whether
-    // load-data was re-run. One source of truth for the runtime.
-    await this.db.query(`
-      CREATE TABLE IF NOT EXISTS app.usage_events (
-        id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-        user_id uuid NOT NULL REFERENCES app.users(id) ON DELETE CASCADE,
-        message_id uuid,
-        model text,
-        prompt_tokens int,
-        completion_tokens int,
-        cost_usd numeric(12,6) NOT NULL,
-        estimated boolean NOT NULL DEFAULT false,
-        created_at timestamptz NOT NULL DEFAULT now()
-      );
-      CREATE INDEX IF NOT EXISTS idx_usage_events_user
-        ON app.usage_events(user_id, created_at DESC);
-    `)
-  }
 
   private get windowSeconds(): number {
     return Number(process.env.USAGE_WINDOW_SECONDS ?? 3600)

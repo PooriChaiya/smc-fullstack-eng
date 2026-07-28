@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS app.conversations (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_conversations_user_updated ON app.conversations(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_conversations_user_updated ON app.conversations(user_id, updated_at DESC);
 
 CREATE TABLE IF NOT EXISTS app.messages (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS app.messages (
   UNIQUE (conversation_id, seq)
 );
 
-CREATE INDEX idx_messages_conversation_seq ON app.messages(conversation_id, seq);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation_seq ON app.messages(conversation_id, seq);
 
 CREATE TABLE IF NOT EXISTS app.tool_calls (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS app.tool_calls (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_tool_calls_message ON app.tool_calls(message_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_message ON app.tool_calls(message_id);
 
 -- Trigger to update updated_at on conversations
 CREATE OR REPLACE FUNCTION app.update_conversation_updated_at()
@@ -49,6 +49,6 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_update_conversation_updated_at ON app.messages;
 CREATE TRIGGER trg_update_conversation_updated_at
-  AFTER INSERT ON app.messages
+  AFTER INSERT OR UPDATE OF status ON app.messages
   FOR EACH ROW
   EXECUTE FUNCTION app.update_conversation_updated_at();

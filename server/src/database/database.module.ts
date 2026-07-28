@@ -17,7 +17,10 @@ const { Pool } = pg
       provide: 'READONLY_POOL',
       useFactory: () => {
         const url = process.env.DATABASE_READONLY_URL ?? 'postgresql://readonly_agent:readonly@localhost:5432/smc'
-        return new Pool({ connectionString: url })
+        return new Pool({
+          connectionString: url,
+          statement_timeout: 5000,
+        })
       },
     },
   ],

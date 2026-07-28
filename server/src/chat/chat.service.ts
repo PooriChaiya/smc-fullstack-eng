@@ -75,7 +75,6 @@ export class ChatService {
         const result = await streamText({
           model: this.llmProvider.getProvider().getModel(
             this.llmProvider.getDefaultModel(),
-            { nonRetrying: true },
           ),
           system: await this.llm.getSystemPrompt(),
           messages,
@@ -185,6 +184,14 @@ export class ChatService {
         // Add tool calls + results to message history
         messages.push({ role: 'assistant', content: toolCallParts } as any)
         messages.push({ role: 'tool', content: toolResultParts } as any)
+      }
+
+      // if we exited the loop with unresolved tool calls (and we
+      // weren't aborted), we hit MAX_LOOPS — warn the user.
+      const stillPending = toolCalls.some(tc => !tc.result && !tc.error)
+      if (stillPending && !signal?.aborted) {
+        status = 'stopped'
+        onChunk({ type: 'error', data: { message: `Reached maximum tool iterations (${MAX_LOOPS}). Response may be incomplete.` } })
       }
 
       if (signal?.aborted) status = 'stopped'
