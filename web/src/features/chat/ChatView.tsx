@@ -13,7 +13,7 @@ import SendIcon from '@mui/icons-material/Send'
 import StopCircleIcon from '@mui/icons-material/StopCircle'
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome'
 import { getMessages, Message as ApiMessage, ToolCall, LimitExceeded } from '@/lib/api'
-import { ToolCallCard } from '@/components/ToolCallCard'
+import { ToolCallCard, ToolCallSteps } from '@/components/ToolCallCard'
 import { MarkdownMessage } from '@/components/MarkdownMessage'
 
 interface ChatViewProps {
@@ -376,18 +376,22 @@ function MessageRow({ msg, thinking, pending }: { msg: ApiMessage; thinking: boo
             {pending ? 'Reconnecting to stream...' : 'Thinking...'}
           </Typography>
         )}
-        {msg.tool_calls?.map((tc) => (
-          <ToolCallCard
-            key={tc.id}
-            toolName={tc.tool_name}
-            args={typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments)}
-            result={tc.result as any}
-            rowCount={tc.row_count ?? undefined}
-            durationMs={tc.duration_ms ?? undefined}
-            error={tc.error ?? undefined}
-            isStreaming={!tc.result && !tc.error}
-          />
-        ))}
+        {msg.tool_calls && msg.tool_calls.length > 0 && (
+          msg.tool_calls.length === 1 ? (
+            <ToolCallCard
+              key={msg.tool_calls[0].id}
+              toolName={msg.tool_calls[0].tool_name}
+              args={typeof msg.tool_calls[0].arguments === 'string' ? msg.tool_calls[0].arguments : JSON.stringify(msg.tool_calls[0].arguments)}
+              result={msg.tool_calls[0].result as any}
+              rowCount={msg.tool_calls[0].row_count ?? undefined}
+              durationMs={msg.tool_calls[0].duration_ms ?? undefined}
+              error={msg.tool_calls[0].error ?? undefined}
+              isStreaming={!msg.tool_calls[0].result && !msg.tool_calls[0].error}
+            />
+          ) : (
+            <ToolCallSteps toolCalls={msg.tool_calls} />
+          )
+        )}
         {/* Only show text bubble if there's content, or if it's a user message, or if it's actively thinking with no tools */}
         {(msg.content || isUser || (thinking && !hasStreamingTools) || (pending && !hasStreamingTools)) && (
           <Paper

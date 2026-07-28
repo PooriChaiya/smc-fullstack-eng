@@ -75,7 +75,14 @@ export class LlmService implements OnModuleInit {
   private hasDataFor(ticker?: string, company?: string, year?: number): boolean {
     if (!cachedCoverage) return true
     if (ticker && !cachedCoverage.tickers.includes(ticker.toUpperCase())) return false
-    if (company && !cachedCoverage.companies.some(c => c.toLowerCase().includes(company.toLowerCase()))) return false
+    if (company) {
+      const normalizedSearch = company.toLowerCase().replace(/[^a-z0-9]/g, '')
+      const match = cachedCoverage.companies.some(c => {
+        const normalizedCompany = c.toLowerCase().replace(/[^a-z0-9]/g, '')
+        return normalizedCompany.includes(normalizedSearch) || normalizedSearch.includes(normalizedCompany)
+      })
+      if (!match) return false
+    }
     if (year && !cachedCoverage.years.includes(year)) return false
     return true
   }
@@ -119,10 +126,10 @@ Table schema for financial_data:
 - ticker (e.g., "AAPL", "TSLA")
 - company (e.g., "Apple Inc.", "Tesla Inc.")
 - year (2022-2025)
-- revenue (numeric)
-- gross_profit (numeric)
-- operating_income (numeric)
-- net_income (numeric)
+- revenue (numeric) - in raw dollars (e.g., 391035000000 = $391B)
+- gross_profit (numeric) - in raw dollars
+- operating_income (numeric) - in raw dollars
+- net_income (numeric) - in raw dollars
 
 HOW TO USE execute_financial_query:
 You MUST provide a complete SQL query in the "sql" parameter. Examples:
@@ -131,6 +138,14 @@ You MUST provide a complete SQL query in the "sql" parameter. Examples:
 - "SELECT year, AVG(revenue) as avg_revenue FROM financials.financial_data WHERE ticker='AAPL' GROUP BY year ORDER BY year NULLS LAST"
 
 CRITICAL: When using ORDER BY, ALWAYS add NULLS LAST for DESC and NULLS FIRST for ASC to ensure NULL values don't misleadingly appear at the top/bottom.
+
+CRITICAL - NATURAL LANGUAGE QUERIES:
+- Users often say "80B profit" meaning approximately $80 billion, NOT exactly 80,000,000,000
+- Use range operators (>=, <=, BETWEEN) instead of exact match (=) for financial figures
+- "companies that make 80B in profit" → WHERE net_income >= 80000000000
+- "companies with revenue around 100B" → WHERE revenue BETWEEN 90000000000 AND 11000000000
+- "most profitable companies" → ORDER BY net_income DESC
+- Convert billions/trillions to full numbers: 80B = 80000000000, 1T = 1000000000000
 
 Always include the sql parameter with a valid SELECT query. Never call the tool with empty arguments.
 
