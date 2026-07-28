@@ -1,0 +1,34 @@
+{
+  "name": "smc-server",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env --import @swc-node/register/esm-register --watch src/main.ts",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=.env dist/main.js",
+    "load-data": "tsx --env-file-if-exists=.env scripts/load-data.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.17",
+    "@nestjs/common": "^10.3.0",
+    "@nestjs/config": "^3.1.1",
+    "@nestjs/core": "^10.3.0",
+    "@nestjs/platform-express": "^10.3.0",
+    "ai": "^7.0.34",
+    "cookie-parser": "^1.4.6",
+    "gpt-tokenizer": "^3.4.0",
+    "ioredis": "^5.3.2",
+    "pg": "^8.11.3",
+    "reflect-metadata": "^0.2.1",
+    "rxjs": "^7.8.1"
+  },
+  "devDependencies": {
+    "@swc-node/register": "^1.12.1",
+    "@swc/core": "^1.15.46",
+    "@types/cookie-parser": "^1.4.6",
+    "@types/node": "^20.11.5",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
